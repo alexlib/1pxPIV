@@ -6,14 +6,14 @@ tAll = tic;
 %% Set processing parameters
 
 % this variable defines, from where images should be read
-imagePath = ['../../M03 Source imgs'];
+imagePath = ['../../TestImages'];
 
 % define pathe, where processing results will be stored
-pivPar.spTargetPath = ['../../M03 spOut v1'];
+pivPar.spTargetPath = ['../../TestImages spOut v1'];
 
 % Define image mask
-pivPar.imMask1 = ['../../M03 Source imgs/Mask.bmp'];
-pivPar.imMask2 = ['../../M03 Source imgs/Mask.bmp'];
+pivPar.imMask1 = ['../../TestImages/Mask.bmp'];
+pivPar.imMask2 = ['../../TestImages/Mask.bmp'];
 
 % define the maximum displacements, for which the cross-correlation is evaluated
 pivPar.spDeltaXNeg = 4;
