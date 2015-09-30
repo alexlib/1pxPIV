@@ -1,4 +1,4 @@
-function [pivData] = pivValidate(pivData,pivPar)
+function [pivData] = pivValidate_V081(pivData,pivPar)
 % pivValidate - validates displacement vectors in PIV data
 %
 % Usage:
@@ -42,6 +42,61 @@ function [pivData] = pivValidate(pivData,pivPar)
 %                             spurious
 %
 %        
+% Outputs:
+%    pivData  ... (struct) structure containing more detailed results. If some fiels were present in pivData
+%           at the input, they are repeated. Followinf fields are added:
+%        imFilename1, imFilename2 ... path and filename of image files (stored only if im1 and im2 are
+%              filenames)
+%        imMaskFilename1, imMaskFilename2 ... path and filename of masking files (stored only if imMask1 and
+%              imMask2 are filenames)
+%        N ... number of interrogation area (= of velocity vectors)
+%        X, Y ... matrices with centers of interrogation areas (positions of velocity vectors)
+%        U, V ... components of velocity vectors
+%        Status ... matrix with statuis of velocity vectors (uint8). Bits have this coding:
+%            1 (bit 1) ... masked (set by pivInterrogate)
+%            2 (bit 2) ... cross-correlation failed (set by pivCrossCorr)
+%            4 (bit 3) ... peak detection failed (set by pivCrossCorr)
+%            8 (bit 4) ... indicated as spurious by median test based on image pair (set by pivValidate)
+%           16 (bit 5) ... interpolated (set by pivReplaced)
+%           32 (bit 6) ... smoothed (set by pivSmooth)
+%           64 (bit 7) ... indicated as spurious by median test based on image sequence (set by pivValidate);
+%              this flag cannot be set when working with a single image pair
+%          128 (bit 8) ... interpolated within image sequence (set by pivReplaced); this flag cannot be set 
+%              when working with a single image pair
+%          256 (bit 9) ... smoothed within an image sequence (set by pivSmooth); this flag cannot be set when
+%              working with a single image pair
+%           (example: if Status for a particulat point is 56 = 32 + 16 + 8, the velocity vector in this point
+%            was indicated as spurious, was replaced by interpolating neighborhood values and was then
+%            adjusted by smoothing.)
+%        iaSizeX, iaSizeY, iaStepX, iaStepY ... copy of dorresponding fields in pivPar input
+%        imSizeX, imSizeY ... image size in pixels
+%        imFilename1, imFilename2 ... path and filename of image files (stored only if im1 and im2 are
+%            filenames)
+%        imMaskFilename1, imMaskFilename2 ... path and filename of masking files (stored only if imMask1 and
+%            imMask2 are filenames)
+%        imNo1, imNo2, imPairNo ... image number and number of image pair (stored only if im1 and im2 are
+%            string with filenames of images). For example, if im1 and im2 are 'Img000005.bmp' and
+%            'Img000006.bmp', value will be imNo1 = 5, imNo2 = 6, and imPairNo = 5.5.
+%        ccPeak ... table with values of cross-correlation peak
+%        ccPeakSecondary ... table with values of secondary cross-correlation peak (maximum of
+%                            crosscorrelation, if 5x5 neighborhood of primary peak is removed)
+%        ccFailedN ... number of vectors for which cross-correlation failed
+%            at distance larger than ccMaxDisplacement*(iaSizeX,iaSizeY) )
+%        ccSubpxFailedN ... number of vectors for which subpixel interpolation failed
+%        spuriousN ... number of spurious vectors (status 1)
+%        spuriousX, spuriousY ... positions, at which the velocity is spurious
+%        spuriousU, spuriousV ... components of the velocity/displacement vectors, which were indicated as
+%                             spurious
+%        replacedN ... number of interpolated vectors (status 2)
+%        replacedX,replacedY ... positions, at which velocity/displacement vectors were replaced
+%        replacedU,replacedV ... components of the velocity/displacement vectors, which were replaced
+%        validN ... number of original and vectors
+%        validX,validY ... positions, at which velocity/displacement vectors is original and valid
+%        validU,validV ... original and valid components of the velocity/displacement vector
+%        infCompTime ... 1D array containing computational time of individual passes (in seconds)
+%    ccFunction ... returns cross-correlation function (in form of an expanded image); see pivCrossCorr
+%
+%%
 % This subroutine is a part of
 %
 % =========================================
@@ -49,54 +104,44 @@ function [pivData] = pivValidate(pivData,pivPar)
 % =========================================
 %
 % PIVsuite is a set of subroutines intended for processing of data acquired with PIV (particle image
-% velocimetry). 
+% velocimetry) within Matlab environment.
 %
 % Written by Jiri Vejrazka, Institute of Chemical Process Fundamentals, Prague, Czech Republic
 %
 % For the use, see files example_XX_xxxxxx.m, which acompany this file. PIVsuite was tested with
-% Matlab 7.12 (R2011a) and 7.14 (R2012a).
+% Matlab 8.2 (R2013b).
 %
-% In the case of a bug, contact me: vejrazka (at) icpf (dot) cas (dot) cz
+% In the case of a bug, please, contact me: vejrazka (at) icpf (dot) cas (dot) cz
 %
 %
 % Requirements:
 %     Image Processing Toolbox
-% 
+%         (required only if pivPar.smMethod is set to 'gaussian')
+%
 %     inpaint_nans.m
 %         subroutine by John D'Errico, available at http://www.mathworks.com/matlabcentral/fileexchange/4551
 %
 %     smoothn.m
-%         subroutine by Damien Garcia, available at 
+%         subroutine by Damien Garcia, available at
 %         http://www.mathworks.com/matlabcentral/fileexchange/274-smooth
 %
 % Credits:
-%    PIVsuite is a redesigned version of PIVlab software [3], developped by W. Thielicke and E. J. Stamhuis. 
-%    Some parts of this code are copied or adapted from it (especially from its piv_FFTmulti.m subroutine). 
+%    PIVsuite is a redesigned version of a part of PIVlab software [3], developped by W. Thielicke and
+%    E. J. Stamhuis. Some parts of this code are copied or adapted from it (especially from its
+%    piv_FFTmulti.m subroutine).
+%
 %    PIVsuite uses 3rd party software:
 %        inpaint_nans.m, by J. D'Errico, [2]
 %        smoothn.m, by Damien Garcia, [5]
-%        
+%
 % References:
-%   [1] Adrian & Whesterweel, Particle Image Velocimetry, Cambridge University Press 2011
+%   [1] Adrian & Whesterweel, Particle Image Velocimetry, Cambridge University Press, 2011
 %   [2] John D'Errico, inpaint_nans subroutine, http://www.mathworks.com/matlabcentral/fileexchange/4551
 %   [3] W. Thielicke and E. J. Stamhuid, PIVlab 1.31, http://pivlab.blogspot.com
 %   [4] Raffel, Willert, Wereley & Kompenhans, Particle Image Velocimetry: A Practical Guide. 2nd edition,
-%       Springer 2007
+%       Springer, 2007
 %   [5] Damien Garcia, smoothn subroutine, http://www.mathworks.com/matlabcentral/fileexchange/274-smooth
-
-
-% Acronyms and meaning of variables used in this subroutine:
-%    IA ... concerns "Interrogation Area"
-%    im ... image
-%    dx ... some index
-%    ex ... expanded (image)
-%    est ... estimate (velocity from previous pass) - will be used to deform image
-%    aux ... auxiliary variable (which is of no use just a few lines below)
-%    cc ... cross-correlation
-%    vl ... validation
-%    sm ... smoothing
-%    Word "velocity" should be understood as "displacement"
-
+%
 
 
 %% Velocity field validation by median test
@@ -132,6 +177,20 @@ else
     tresh = pivPar.vlTreshSeq;
     epsi = pivPar.vlEpsSeq;
     statusbit = 7;
+end
+
+% Validation based on ccPeak: Anything with ccPeak < vlMinCC mark as invalid.
+if pivPar.vlMinCC > 0
+    auxLowCC = logical(pivData.ccPeak < pivPar.vlMinCC*medianfast(pivData.ccPeak));
+    for kt = 1:size(status,3)
+        for kx = 1:size(status,2)
+            for ky = 1:size(status,1)
+                if auxLowCC(ky,kx,kt)
+                    status(ky,kx,kt) = bitset(status(ky,kx,kt),statusbit);
+                end
+            end
+        end
+    end
 end
 
 for kpass = 1:passes       % proceed in two passes
@@ -170,12 +229,12 @@ for kpass = 1:passes       % proceed in two passes
                 % compute the medians and deviations from median
                 auxNeighU = auxU(ky:ky+2*distXY,kx:kx+2*distXY,kt:kt+2*distT);
                 auxNeighV = auxV(ky:ky+2*distXY,kx:kx+2*distXY,kt:kt+2*distT);
-                vlMedU(ky,kx,kt) = median(removeNaNs(reshape(auxNeighU,1,(2*distT+1)*(2*distXY+1)^2)));
-                vlMedV(ky,kx,kt) = median(removeNaNs(reshape(auxNeighV,1,(2*distT+1)*(2*distXY+1)^2)));
+                vlMedU(ky,kx,kt) = medianfast(auxNeighU);
+                vlMedV(ky,kx,kt) = medianfast(auxNeighV);
                 auxNeighU(distXY+1,distXY+1,distT+1) = NaN;   % remove examined vector from the rms calculation
                 auxNeighV(distXY+1,distXY+1,distT+1) = NaN;
-                vlRmsU(ky,kx,kt) = stdfast(auxNeighU-vlMedU(ky,kx,kt));  % rms of velues from the median
-                vlRmsV(ky,kx,kt) = stdfast(auxNeighV-vlMedV(ky,kx,kt));
+                vlRmsU(ky,kx,kt) = medianfast(abs(auxNeighU-vlMedU(ky,kx,kt)));  % rms of velues from the median
+                vlRmsV(ky,kx,kt) = medianfast(abs(auxNeighV-vlMedV(ky,kx,kt)));
                 if status(ky,kx,kt) == 0 && abs(U(ky,kx,kt)-vlMedU(ky,kx,kt))>(tresh*vlRmsU(ky,kx,kt)+epsi)
                     status(ky,kx,kt) = bitset(status(ky,kx,kt),statusbit);
                 end
@@ -227,11 +286,6 @@ end
 
 %% XX Local functions
 
-function [out] = removeNaNs(in)
-% remove NaNs from a vector or column
-out = in(~isnan(in));
-end
-
 function [out] = stdfast(in)
 % computes root-mean-square (reprogramed, because std in Matlab is somewhat slow due to some additional tests)
 in = reshape(in,1,numel(in));
@@ -243,3 +297,18 @@ out = sqrt(sum(((in - avg).*notnan).^2)/(n-0)); % there should be -1 in the deno
 end
 
 
+function [out] = medianfast(in)
+in = reshape(in,numel(in),1);
+in = in(~isnan(in));
+if numel(in)==0
+    out = NaN;
+    return
+end
+in = sort(in);
+N = numel(in);
+if N/2 == floor(N/2)
+    out = (in(N/2)+in(N/2+1))/2;
+else
+    out = in(ceil(N/2));
+end
+end

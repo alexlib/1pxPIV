@@ -47,6 +47,12 @@ function [pivData,ccFunction] = pivAnalyzeImagePair(im1,im2,pivData,pivParIn)
 %              displacement.
 %            - Note: IA offset is not included in the displacement accounted by ccMaxDisplacement, hence real
 %              displacement can be larger if ccIAmethod is any other than 'basic'.
+%          ccWindow ... windowing function p. 389 in ref [1]). Possible values are 'uniform', 'gauss',
+%             'parzen', 'hanning', 'welch'
+%            - default value: 'Welch'. If missing in pivPar during evaluation, 'unifor' is considered for
+%              compatibility reasons.
+%          ccCorrectWindowBias ... Set whether cc is corrected for bias due to IA windowing.
+%            - default value: true (will correct peak)
 %      --- prefix vl - these fields relates to vector validation, subroutine pivValidate.m
 %          vlTresh, vlEps ... Define treshold for the median test. To accepted, the difference of actual vector
 %              from the median (of vectors in the neighborhood) should be at most vlTresh *(vlEps +
@@ -143,7 +149,7 @@ function [pivData,ccFunction] = pivAnalyzeImagePair(im1,im2,pivData,pivParIn)
 %        infCompTime ... 1D array containing computational time of individual passes (in seconds)
 %    ccFunction ... returns cross-correlation function (in form of an expanded image); see pivCrossCorr
 %
-%
+%%
 % This subroutine is a part of
 %
 % =========================================
@@ -156,7 +162,7 @@ function [pivData,ccFunction] = pivAnalyzeImagePair(im1,im2,pivData,pivParIn)
 % Written by Jiri Vejrazka, Institute of Chemical Process Fundamentals, Prague, Czech Republic
 %
 % For the use, see files example_XX_xxxxxx.m, which acompany this file. PIVsuite was tested with
-% Matlab 7.12 (R2011a) and 7.14 (R2012a).
+% Matlab 8.2 (R2013b).
 %
 % In the case of a bug, please, contact me: vejrazka (at) icpf (dot) cas (dot) cz
 %
@@ -188,9 +194,8 @@ function [pivData,ccFunction] = pivAnalyzeImagePair(im1,im2,pivData,pivParIn)
 %   [4] Raffel, Willert, Wereley & Kompenhans, Particle Image Velocimetry: A Practical Guide. 2nd edition,
 %       Springer, 2007
 %   [5] Damien Garcia, smoothn subroutine, http://www.mathworks.com/matlabcentral/fileexchange/274-smooth
-
-
-% Acronyms and meaning of variables used in this subroutine:
+%
+%% Acronyms and meaning of variables used in this subroutine:
 %    IA ... concerns "Interrogation Area"
 %    im ... image
 %    dx ... some index
@@ -201,11 +206,13 @@ function [pivData,ccFunction] = pivAnalyzeImagePair(im1,im2,pivData,pivParIn)
 %    vl ... validation
 %    sm ... smoothing
 %    Word "velocity" should be understood as "displacement"
+%%
 
 pivData.infCompTime = [];
 % loop for all required passes
 for kp = 1:pivParIn.anNpasses
     timer = tic;
+    pivData0 = pivData;     % save velocity before computation - will be used if predictor-corrector is used
     % extract parameters for the corresponding pass
     [pivPar] = pivParams(pivData,pivParIn,'singlePass',kp);
     % find interrogation areas in images, shift or deform them if required
@@ -216,6 +223,8 @@ for kp = 1:pivParIn.anNpasses
     else
         pivData = pivCrossCorr(exIm1,exIm2,pivData,pivPar);
     end
+    % apply predictor-corrector to the velocity data
+    pivData = pivCorrector(pivData,pivData0,pivPar);
     % validate velocity field
     pivData = pivValidate(pivData,pivPar);
     % interpolate invalid velocity vectros
@@ -225,17 +234,33 @@ for kp = 1:pivParIn.anNpasses
     % save the information about actual pass
     pivData.infPassNo = kp;
     % show the plot if reqquired
-    if isfield(pivPar,'qvPair') && numel(pivPar.qvPair)>0
-        pivQuiver(pivData,pivPar.qvPair);
+    if ~(~usejava('jvm') || ~usejava('desktop') || ~feature('ShowFigureWindows'))
+        if isfield(pivPar,'qvPair') && numel(pivPar.qvPair)>0
+            pivQuiver(pivData,pivPar.qvPair);
+            title(['Pass no. ',num2str(kp,'%d'),...
+                ', IA size ', num2str(pivPar.iaSizeX,'%d'), ...
+                'x', num2str(pivPar.iaSizeY,'%d'),...
+                ', grid step ',num2str(pivPar.iaStepX,'%d'), ...
+                'x', num2str(pivPar.iaStepY,'%d')]);
+            drawnow;
+        end
     end
+    % remove temporary data from pivData
+    pivData = rmfield(pivData,'ccW');
+    pivData = orderfields(pivData);
     % get the computational time
     pivData.infCompTime(kp) = toc(timer);
 end
 
+% remove temporary data from pivData
+pivData = rmfield(pivData,'imArray1');
+pivData = rmfield(pivData,'imArray2');
+pivData = rmfield(pivData,'imMaskArray1');
+pivData = rmfield(pivData,'imMaskArray2');
+
+% add additional fields...
+pivData.Nx = size(pivData.X,2);
+pivData.Ny = size(pivData.X,1);
+
 % 3. sort pivData's fields alphabeticcally
-fieldNames = sort(fieldnames(pivData));
-aux = [];
-for kk = 1:numel(fieldNames)
-    aux.(fieldNames{kk}) = pivData.(fieldNames{kk});
-end
-pivData = aux;
+pivData = orderfields(pivData);

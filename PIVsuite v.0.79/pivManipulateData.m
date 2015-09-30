@@ -48,14 +48,7 @@ function [pivDataOut] = pivManipulateData(action,varargin)
 %    7. pivDataSeq = pivManipulateData('combineData',pivDataSeq1,pivDataSeq2,mult1,mult2)
 %       pivDataSeq = pivManipulateData('combineData',pivDataSeq1,pivDataSeq2,mult1,mult2,UmagMax)
 %          Same as Usage 6., but works with pivDataSeq instead of pivData
-%    8. pivDataSeq = pivManipulateData('computeKuuv',pivDataSeq)
-%       pivDataSeq = pivManipulateData('computeKuv',pivDataSeq)
-%       pivDataSeq = pivManipulateData('computeKuvv',pivDataSeq)
-%          Computes turbulent kinetic energy as
-%              k = sqrt(3/2*<u'^2> + 3/2*<v'^2>)        (action 'computeKuv')
-%              k = sqrt(2*<u'^2> + <v'^2>)              (action 'computeKuuv')
-%              k = sqrt(<u'^2> + 2*<v'^2>)              (action 'computeKuvv')
-%    9. pivData = pivManipulateData('limitX',pivData,[xmin,xmax])
+%    8. pivData = pivManipulateData('limitX',pivData,[xmin,xmax])
 %       pivDataSeq = pivManipulateData('limitX',pivDataSeq,[xmin,xmax])
 %       pivData = pivManipulateData('limitY',pivData,[ymin,ymax])
 %       pivDataSeq = pivManipulateData('limitY',pivDataSeq,[ymin,ymax])
@@ -63,10 +56,10 @@ function [pivDataOut] = pivManipulateData(action,varargin)
 %       pivDataSeq = pivManipulateData('limitXY',pivDataSeq,[xmin,xmax,ymin,ymax])
 %          Removes from data all data points, which have X coordinates outside range <xmin,xmax> and/or which
 %          have Y coordinates outside range <ymin,ymax>.
-%   10. pivDataStat = pivManipulateData('writeToStat',pivDataStat,pivData)
+%    9. pivDataStat = pivManipulateData('writeToStat',pivDataStat,pivData)
 %          Takes the velocity field contained in pivData, and adds it to velocity statistics included in
 %          pivDataStat. #################### BETTER DESCRIPTION #######################
-%   11. pivDataStat = pivManipulateData('initStat',pivDataStat,pivData)
+%   10. pivDataStat = pivManipulateData('initStat',pivDataStat,pivData)
 %          Initializes the data structure for, which will contain velocity statistics.
 %          #################### BETTER DESCRIPTION #######################
 %
@@ -75,8 +68,7 @@ function [pivDataOut] = pivManipulateData(action,varargin)
 %         'initSequenceData', 'writeTimeSlice', 'readTimeSlice','multiplyVelocity','tSingle','toDouble'.
 %         See "Usage" for details.
 %    pivData ... structure containing results of pivAnalyzeImagePair.m. In this structure, velocity fields .U
-%         and .V have ny x nx elements (where ny and nx is the number of interrogation areas). .ccPeak and
-%         .ccPeakSecondary have the same size.
+%         and .V have ny x nx elements (where ny and nx is the number of interrogation areas).
 %    pivDataSeq ... structure containing results of pivAnalyzeImageSequence.m. In this structure, velocity
 %         fields .U and .V have ny x nx x nt elements (where ny and nx is the number of interrogation areas,
 %         nt is the number of image pairs). .ccPeak and .ccPeakSecondary have the same size. Fields
@@ -101,9 +93,7 @@ function [pivDataOut] = pivManipulateData(action,varargin)
 % PIVsuite is a set of subroutines intended for processing of data acquired with PIV (particle image
 % velocimetry).
 %
-% Written by Jiri Vejrazka, Institute of Chemical Process Fundamentals, Prague, Czech Republic,
-% with these contributions:
-%    Nicolas Begue, ENSIACET, Toulouse (action 'computeKuv')
+% Written by Jiri Vejrazka, Institute of Chemical Process Fundamentals, Prague, Czech Republic
 %
 % For the use, see files example_XX_xxxxxx.m, which acompany this file. PIVsuite was tested with
 % Matlab 7.12 (R2011a) and 7.14 (R2012a).
@@ -327,6 +317,9 @@ switch(lower(action))
         if isfield(pivDataOut,'vorticity')
             pivDataOut.vorticity = single(pivDataIn.vorticity(:,:,kt));
         end
+        if isfield(pivDataOut,'epsLEPIV')
+            pivDataOut.epsLEPIV = single(pivDataIn.epsLEPIV(:,:,kt));
+        end
         if isfield(pivDataOut,'ccStd1')
             pivDataOut.ccStd1 = single(pivDataIn.ccStd1(:,:,kt));
         end
@@ -413,7 +406,40 @@ switch(lower(action))
         pivDataOut.Kuvv = 1/2 * (pivDataOut.RSuu + 2*pivDataOut.RSvv);
         
         
-    % ACTION multiplyVelocity
+    % ACTION LEPIVdissip
+    case 'lepivdissip'
+        pivDataOut = varargin{1};
+        pivDataIn = varargin{1};
+        if nargin>2  % Smagorinsky constant can be provided as an input
+            Cs = varargin{2};   % Smagorinsky constant
+        else
+            Cs = 0.17; 
+        end    
+        % compute derivatives of the velocity field
+        dUdX = diffField(pivDataIn.U,pivDataIn.X,2);
+        dUdY = diffField(pivDataIn.U,pivDataIn.Y,1);
+        dVdX = diffField(pivDataIn.V,pivDataIn.X,2);
+        dVdY = diffField(pivDataIn.V,pivDataIn.Y,1);
+        % compute strain rate (eq. 18 in de Jong, Exp Fluids 2009)
+        SijSij = 2*dUdX.^2 + 2*dVdY.^2 + 2*dUdX.*dVdY + 3/2*(dUdY+dVdX).^2;
+        % compute dissiption rate (eq. 15, 17 and 18 combined, de Jong, Exp Fluids 2009)
+        epsilon = 2*Cs^2 * pivDataIn.iaSizeX*pivDataIn.iaSizeY * sqrt(2*SijSij) .* SijSij;
+        % compute mean dissipation rate
+        epsilonMean = mean(epsilon,3);
+        % output results
+        pivDataOut.dUdX = dUdX;
+        pivDataOut.dUdY = dUdY;
+        pivDataOut.dVdX = dVdX;
+        pivDataOut.dVdY = dVdY;
+        pivDataOut.SijSij = SijSij;
+        pivDataOut.epsLEPIV = epsilon;
+        pivDataOut.epsMeanLEPIV = epsilonMean;
+        
+        
+
+        
+        
+        % ACTION multiplyVelocity
     case 'multiplyvelocity'
         pivDataIn = varargin{1};
         mult = varargin{2};
@@ -563,35 +589,6 @@ switch(lower(action))
         pivDataOut.Status = uint16(pivDataOut.Status);
         
         
-    % ACTION computeVorticity
-    case {'computevorticity'}
-        fprintf('Calculating the vorticity... ');
-        tic;
-        pivDataC = varargin{1};
-        vort = zeros(size(pivDataC.U)) + NaN;
-        for ki = 1:size(pivDataC.U,3);
-            % following. eq. (9.8) and (9.11) in Adrian & Westerweel, p. 432
-            % compute filtered velocity fields
-            Ufilt = zeros(size(pivDataC.U,1)+2,size(pivDataC.U,2)+2)+NaN;
-            Ufilt(2:end-1,2:end-1) = 0.5*pivDataC.U(:,:,ki);
-            Ufilt(2:end-1,1:end-2) = Ufilt(2:end-1,1:end-2)+0.25*pivDataC.U(:,:,ki);
-            Ufilt(2:end-1,3:end) = Ufilt(2:end-1,3:end)+0.25*pivDataC.U(:,:,ki);
-            Vfilt = zeros(size(pivDataC.U,1)+2,size(pivDataC.U,2)+2)+NaN;
-            Vfilt(2:end-1,2:end-1) = 0.5*pivDataC.V(:,:,ki);
-            Vfilt(1:end-2,2:end-1) = Vfilt(1:end-2,2:end-1)+0.25*pivDataC.V(:,:,ki);
-            Vfilt(3:end,2:end-1) = Vfilt(3:end,2:end-1)+0.25*pivDataC.V(:,:,ki);
-            % get grid spacing
-            dX = pivDataC.X(1,2)-pivDataC.X(1,1);
-            dY = pivDataC.Y(2,1)-pivDataC.Y(1,1);
-            % compute vorticity
-            vort(:,:,ki) = (Vfilt(2:end-1,3:end)-Vfilt(2:end-1,1:end-2))/2/dX - ...
-                (Ufilt(3:end,2:end-1)-Ufilt(1:end-2,2:end-1))/2/dY;
-        end
-        pivDataC.vorticity = vort;
-        fprintf('finished in %.2f s.\n', toc);
-        pivDataOut = pivDataC;
-        
-        
         % ACTIONS limitX, limitY
     case {'limitx','limity','limitxy'}
         pivDataIn = varargin{1};
@@ -642,12 +639,15 @@ switch(lower(action))
         if isfield(pivDataIn,'U') && numel(size(pivDataIn.U))==2,pivDataOut.U = pivDataIn.U(ykeep,xkeep); end;
         if isfield(pivDataIn,'V') && numel(size(pivDataIn.V))==2,pivDataOut.V = pivDataIn.V(ykeep,xkeep); end;
         if isfield(pivDataIn,'vorticity') && numel(size(pivDataIn.vorticity))==2,pivDataOut.vorticity = pivDataIn.vorticity(ykeep,xkeep); end;
+        if isfield(pivDataIn,'epsLEPIV') && numel(size(pivDataIn.epsLEPIV))==2,pivDataOut.epsLEPIV = pivDataIn.epsLEPIV(ykeep,xkeep); end;
+        if isfield(pivDataIn,'epsMeanLEPIV') && numel(size(pivDataIn.epsMeanLEPIV))==2,pivDataOut.epsMeanLEPIV = pivDataIn.epsMeanLEPIV(ykeep,xkeep); end;
         if isfield(pivDataIn,'Status') && numel(size(pivDataIn.Status))==2,pivDataOut.Status = pivDataIn.Status(ykeep,xkeep); end;        
         if isfield(pivDataIn,'ccPeak') && numel(size(pivDataIn.ccPeak))==2,pivDataOut.ccPeak = pivDataIn.ccPeak(ykeep,xkeep); end;        
         if isfield(pivDataIn,'ccPeakSecondary') && numel(size(pivDataIn.ccPeakSecondary))==2,pivDataOut.ccPeakSecondary = pivDataIn.ccPeakSecondary(ykeep,xkeep); end;        
         if isfield(pivDataIn,'U') && numel(size(pivDataIn.U))==3,pivDataOut.U = pivDataIn.U(ykeep,xkeep,:); end;
         if isfield(pivDataIn,'V') && numel(size(pivDataIn.V))==3,pivDataOut.V = pivDataIn.V(ykeep,xkeep,:); end;
         if isfield(pivDataIn,'vorticity') && numel(size(pivDataIn.vorticity))==3,pivDataOut.vorticity = pivDataIn.vorticity(ykeep,xkeep,:); end;
+        if isfield(pivDataIn,'epsLEPIV') && numel(size(pivDataIn.epsLEPIV))==3,pivDataOut.epsLEPIV = pivDataIn.epsLEPIV(ykeep,xkeep,:); end;
         if isfield(pivDataIn,'Status') && numel(size(pivDataIn.Status))==3,pivDataOut.Status = pivDataIn.Status(ykeep,xkeep,:); end;
         if isfield(pivDataIn,'ccPeak') && numel(size(pivDataIn.ccPeak))==3,pivDataOut.ccPeak = pivDataIn.ccPeak(ykeep,xkeep,:); end;
         if isfield(pivDataIn,'ccPeakSecondary') && numel(size(pivDataIn.ccPeakSecondary))==3,pivDataOut.ccPeakSecondary = pivDataIn.ccPeakSecondary(ykeep,xkeep,:); end;
@@ -719,3 +719,39 @@ switch(lower(action))
 end
 end
 
+
+%% LOCAL FUNCTIONS
+
+function [D] = diffField(F,X,dim)
+% computes central difference dF/dX, where F is 2D or 3D field, X is a 2D
+% matrix with coordinates; dim defines, along which dimension is X varied
+% (use dim = 1 for differentiating across rows (i.e. dF/dY in PIVsuite),
+% and dim=2 for differentiating across columns (dF/dX)).
+
+% initialize fields
+F1 = zeros(size(F,1)+2,size(F,2)+2,size(F,3)) + NaN;
+F2 = F1;
+X1 = zeros(size(X,1)+2,size(X,2)+2) + NaN;
+X2 = X1;
+% create shifted and padded arrays
+if dim==1   % derivative along Y
+    F2(3:end,  2:end-1,:) = F;
+    F1(1:end-2,2:end-1,:) = F;
+    X2(3:end,  2:end-1,:) = X;
+    X1(1:end-2,2:end-1,:) = X;
+elseif dim==2
+    F2(2:end-1,3:end,  :) = F;
+    F1(2:end-1,1:end-2,:) = F;
+    X2(2:end-1,3:end,  :) = X;
+    X1(2:end-1,1:end-2,:) = X;
+else
+    error('pivManipulateData.m:diffField: invalid value of dim');
+end
+% differentiate
+D = F1 + NaN;
+for kk=1:size(F,3)
+    D(:,:,kk) = (F2(:,:,kk)-F1(:,:,kk))./(X2(:,:)-X1(:,:));
+end
+% clip padded values
+D = D(2:end-1,2:end-1,:);
+end

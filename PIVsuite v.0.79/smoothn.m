@@ -323,7 +323,7 @@ RobustIterativeProcess = true;
 RobustStep = 1;
 nit = 0;
 %--- Error on p. Smoothness parameter s = 10^p
-errp = 0.1;
+errp = 0.001;
 opt = optimset('TolX',errp);
 %--- Relaxation factor RF: to speedup convergence
 RF = 1 + 0.75*isweighted;
@@ -375,9 +375,9 @@ end
 %---
 if isauto
     if abs(log10(s)-log10(sMinBnd))<errp
-        warning('MATLAB:smoothn:SLowerBound',...
-            ['S = ' num2str(s,'%.3e') ': the lower bound for S ',...
-            'has been reached. Put S as an input variable if required.'])
+%         warning('MATLAB:smoothn:SLowerBound',...
+%             ['S = ' num2str(s,'%.3e') ': the lower bound for S ',...
+%             'has been reached. Put S as an input variable if required.'])
     elseif abs(log10(s)-log10(sMaxBnd))<errp
         warning('MATLAB:smoothn:SUpperBound',...
             ['S = ' num2str(s,'%.3e') ': the upper bound for S ',...

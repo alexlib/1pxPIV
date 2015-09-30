@@ -109,6 +109,8 @@ function [pivDataSeq] = pivAnalyzeImageSequence(im1,im2,pivDataIn,pivParIn,pivPa
 %        imMaskFilename1, imMaskFilename2 ... path and filename of masking files (stored only if imMask1 and 
 %              imMask2 are filenames)
 %        N ... number of interrogation area (= of velocity vectors)
+%        Nx, Ny ... number of "rows" and "columns", N = Nx*Ny
+%        Nt ... number of velocity fields (= image pairs)
 %        X, Y ... matrices with centers of interrogation areas (positions of velocity vectors)
 %        U, V ... components of velocity vectors
 %        Status ... matrix with statuis of velocity vectors (uint8). Bits have this coding:
@@ -211,6 +213,14 @@ function [pivDataSeq] = pivAnalyzeImageSequence(im1,im2,pivDataIn,pivParIn,pivPa
 %    Word "velocity" should be understood as "displacement"
 
 
+% Check if some image pairs are defined. If not, exit. 
+if numel(im1)==0 || numel(im2)==0
+    pivDataSeq = [];
+    if isfield(pivParIn,'jmLockFile') && numel(pivParIn.jmLockFile)>0 && exist(pivParIn.jmLockFile,'file')
+        delete(pivParIn.jmLockFile);
+    end
+    return;
+end
 
 % Check the existance of output folder. If it does not exist, try to create it. If unsuccessful, give a
 % message.
@@ -223,20 +233,41 @@ if pivParIn.anOnDrive && ~exist(pivParIn.anTargetPath,'dir')
     end
 end
 
-% If working on disk on processing is not enforced: Check the presence of all output files. If all output
-% files are present, read the data and skip the processing.
-if pivParIn.anOnDrive && ~pivParIn.anForceProcessing
+% Test, if the final output file is present
+[~,filename1] = treatImgPath(im1{1});
+[~,filename2] = treatImgPath(im2{1});
+if numel(im2)>1
+    [~,filename3] = treatImgPath(im1{2});
+    [~,filename4] = treatImgPath(im2{end});
+else
+    [~,filename3] = treatImgPath(im1{end});
+    [~,filename4] = treatImgPath(im2{end});
+end
+seqFilename = [pivParIn.anTargetPath,'/pivSeq_',filename1,'_',filename2,'_',filename3,'_',filename4,'.mat'];
+pivSeqFileExist = exist(seqFilename,'file');
+
+% Test, whether presence of all files should be pretested
+TestFilePresence = true;
+if isfield(pivParIn,'seqJobNumber'), TestFilePresence = false; end
+if ~pivParIn.anOnDrive, TestFilePresence = false; end
+if pivParIn.anForceProcessing, TestFilePresence = false; end
+
+
+% Check the presence of all output files. If all output files are present, read the data and skip the processing.
+AllFilesFound = false;
+if TestFilePresence
+    AllFilesFound = true;
     fprintf('Checking presence of %d output files...', numel(im1)+1);
     tic;
     % get list of existing output files 
-    aux = dir([pivParIn.anTargetPath, filesep, 'piv*.mat']);
+    aux = dir([pivParIn.anTargetPath, '/piv*.mat']);
     filelist = cell(numel(aux,1));
     for ki = 1:numel(aux)
         filelist{ki,1} = aux(ki).name;
     end
     % get list of required output files
     if ~pivParIn.anPairsOnly
-        requiredFiles = cell(numel(im1)+1,1);
+        requiredFiles = cell(numel(im1),1);
     else
         requiredFiles = cell(numel(im1),1);
     end
@@ -245,15 +276,7 @@ if pivParIn.anOnDrive && ~pivParIn.anForceProcessing
         [~,filename2] = treatImgPath(im2{ki});
         requiredFiles{ki,1} = ['piv_',filename1, '_', filename2, '.mat'];
     end
-    [~,filename1] = treatImgPath(im1{1});
-    [~,filename2] = treatImgPath(im2{1});
-    [~,filename3] = treatImgPath(im1{2});
-    [~,filename4] = treatImgPath(im2{end});
-    if ~pivParIn.anPairsOnly
-        requiredFiles{end,1} = ['pivSeq_',filename1,'_',filename2,'_',filename3,'_',filename4,'.mat'];
-    end
     % check presence of required files (complicated for better speed...)
-    OK = true;
     auxPrevious = 0;
     for ki = 1:numel(requiredFiles)
         auxFound = false; % first check, if it is not close to previously found file
@@ -277,28 +300,45 @@ if pivParIn.anOnDrive && ~pivParIn.anForceProcessing
             end
         end
         if ~auxFound
-            OK = false;
+            AllFilesFound = false;
             break
         end
     end
-    % if all files are present, read the last output file end exit subroutine
-    if OK
+    if AllFilesFound
         fprintf(' Finished in %.2f s. All required files found.\n',toc);
-        fprintf(' Reading results from %s. This will take a while (in my Matlab, Ctrl+C does not work at this stage)...',requiredFiles{ki,1});
-        tic
-        pause(0.02);
-        if ~pivParIn.anPairsOnly  
-            aux = load([pivParIn.anTargetPath,filesep,requiredFiles{end,1}],'pivDataSeq');
-            pivDataSeq = aux.pivDataSeq;
-        else
-            pivDataSeq = [];
-        end
-        fprintf(' Finished in %.2f s. \n',toc);
-        return;
     else
         fprintf(' Finished in %.2f s. Some files are missing. \n', toc);
     end
 end
+% Now variable AllFilesFound contains info about presence of files with results
+
+% Decide, whether process image pairs, or read results and leave:
+ReadAndLeave = false;
+if isfield(pivParIn,'seqJobNumber') && pivSeqFileExist, ReadAndLeave = true; end
+if AllFilesFound && pivSeqFileExist, ReadAndLeave = true; end
+
+
+% if all files are present, read the last output file end exit subroutine
+if ReadAndLeave
+    fprintf(' Reading results from result file. This will take a while (in my Matlab, Ctrl+C does not work at this stage)...');
+    tic
+    pause(0.02);
+    if ~pivParIn.anPairsOnly
+        aux = load(seqFilename,'pivDataSeq');
+        pivDataSeq = aux.pivDataSeq;
+    else
+        pivDataSeq = [];
+    end
+    fprintf(' Finished in %.2f s. \n',toc);
+    if isfield(pivParIn,'jmLockFile') && numel(pivParIn.jmLockFile)>0 && exist(pivParIn.jmLockFile,'file')
+        delete(pivParIn.jmLockFile);
+        auxF = fopen([pivParIn.jmLockFile(1:end-4) '_Finished.lck'],'w');
+        fprintf(auxF,'Processing finished.');
+        fclose(auxF);
+    end
+    return;
+end
+
 
 % initialization
 LastLoopProcessed = false;    % flag whether results for previous image pair is in memory
@@ -338,12 +378,11 @@ for ki = initPair:numel(im1)
         else
             filenameOut = ['piv_',filename1, '_', filename2, '.mat'];
         end
-        pathOut = [pivParIn.anTargetPath, filesep, filenameOut];
+        pathOut = [pivParIn.anTargetPath, '/', filenameOut];
         if exist(pathOut,'file') && ~pivParIn.anForceProcessing
             aux = load(pathOut,'pivData');
             pivData = aux.pivData;
             LastLoopProcessed = false;
-            
             fprintf(' Results found (%s). Skipping processing.\n', filenameOut);
             if ki==1 && ~pivParIn.anPairsOnly && ~pivParIn.anStatsOnly
                 pivDataSeq = pivManipulateData('initSequenceData',pivData,numel(im1));
@@ -357,6 +396,12 @@ for ki = initPair:numel(im1)
                 pivDataSeq = pivManipulateData('writeToStat',pivDataSeq,pivData);
             else
                 pivDataSeq = [];
+            end
+            % update lock file
+            if isfield(pivParIn,'jmLockFile') && numel(pivParIn.jmLockFile)>0
+                flock = fopen(pivParIn.jmLockFile,'w');
+                fprintf(flock,[datestr(clock) '\nResults for image pair read from file...']);
+                fclose(flock);
             end
             continue
         end
@@ -423,8 +468,8 @@ for ki = initPair:numel(im1)
     end
     if pivParIn.anOnDrive
         save(pathOut,'pivData');
-        if isfield(pivParIn,'anLockFile') && numel(pivParIn.anLockFile)>0
-            flock = fopen(pivParIn.anLockFile,'w');
+        if isfield(pivParIn,'jmLockFile') && numel(pivParIn.jmLockFile)>0
+            flock = fopen(pivParIn.jmLockFile,'w');
             fprintf(flock,[datestr(clock) '\nWriting results for image pair...']);
             fclose(flock);
         end
@@ -454,22 +499,31 @@ if ~pivParIn.anPairsOnly && ~pivParIn.anStatsOnly && isfield(pivPar,'smMethodSeq
     fprintf('Finished in %.2f s.\n', toc);
 end
 
+% add information about number of time steps and elements
+if ~pivParIn.anPairsOnly
+    pivDataSeq.Nt = numel(im1);
+    pivDataSeq.Nx = size(pivDataSeq.X,2);
+    pivDataSeq.Ny = size(pivDataSeq.X,1);
+    pivDataSeq = orderfields(pivDataSeq);
+end
+
 % save all sequence data
 if pivParIn.anOnDrive && ~pivParIn.anPairsOnly
-    [~,filename1] = treatImgPath(im1{1});
-    [~,filename2] = treatImgPath(im2{1});
-    [~,filename3] = treatImgPath(im1{2});
-    [~,filename4] = treatImgPath(im2{end});
-    filenameOut = ['pivSeq_',filename1,'_',filename2,'_',filename3,'_',filename4,'.mat'];
-    pathOut = [pivParIn.anTargetPath, filesep, filenameOut];
-    save(pathOut,'pivDataSeq','-v7.3');
-    if isfield(pivParIn,'anLockFile') && numel(pivParIn.anLockFile)>0
-        flock = fopen(pivParIn.anLockFile,'w');
+    if isfield(pivParIn,'jmLockFile') && numel(pivParIn.jmLockFile)>0
+        flock = fopen(pivParIn.jmLockFile,'w');
         fprintf(flock,[datestr(clock) '\nWriting results for PIV sequence']);
         fclose(flock);
     end
+    save(seqFilename,'pivDataSeq','-v7.3');
 end
 
+% erase lock file when finished
+if isfield(pivParIn,'jmLockFile') && numel(pivParIn.jmLockFile)>0 && exist(pivParIn.jmLockFile,'file')
+    delete(pivParIn.jmLockFile);
+    auxF = fopen([pivParIn.jmLockFile(1:end-4) '_Finished.lck'],'w');
+    fprintf(auxF,'Processing finished.');
+    fclose(auxF);
+end
 
 end
 
@@ -482,7 +536,7 @@ imgNo = [];
 folder = '';
 if numel(path)>0
     path = path(end:-1:1);
-    I = find(path==filesep);
+    I = find(path=='/'|path=='\');
     I = I(1);
     Idot = find(path=='.');
     Idot = Idot(1);

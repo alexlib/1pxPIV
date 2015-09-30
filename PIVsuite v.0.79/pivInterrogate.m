@@ -33,7 +33,12 @@ function [exIm1,exIm2,pivData] = pivInterrogate(im1,im2,pivData,pivPar)
 %                                      .iaMethod == 'deflinear' or 'defspline'. Possible values are:
 %           'linear', 'spline' ... interpolation is carried out using interp2 function with option either
 %                                  '*linear' or '*spline'
-%
+%       iaPreprocMethod ... defines image preprocessing method. Possible values are
+%            'none' ... no image preprocessing
+%            'MinMax' ... MinMax filter is applied (see p. 248 in Ref. [1])
+%       iaMinMaxSize ... (applies only if iaPreprocMethod is 'MinMax'). Size of MinMax filter kernel.
+%       iaMinMaxLevel ... (applies only if iaPreprocMethod is 'MinMax'). Contrast level, below which
+%            contrast in not more enhanced.
 % Outputs:
 %    exIm1, exIm2 ... expanded image 1 and 2. Expanded image is an image, in which IAs are side-by-side 
 %          (expanded image has size [iaNX*iaSizeX,iaNY*iaSizeY]); if a pixel appears in n IAs, it will be 
@@ -45,19 +50,15 @@ function [exIm1,exIm2,pivData] = pivInterrogate(im1,im2,pivData,pivPar)
 %              filenames)
 %        imMaskFilename1, imMaskFilename2 ... path and filename of masking files (stored only if imMask1 and 
 %              imMask2 are filenames)
+%        imArray1, imArray2 ... arrays with read and preprocessed images (these fields are removed at
+%              pivAnalyzeImagePair.m)
+%        imMaskArray1, imMaskArray2 ... arrays containing Boolean variable (they are removed by
+%              pivAnalyzeImagePair.m)
 %        imNo1, imNo2, imPairNo ... image number (completed only if im1 and im2 are filenames with images).
 %              For example, if im1 and im2 are 'Img000005.bmp' and 'Img000006.bmp', value will be imNo1 = 5, 
 %              imNo2 = 6, and imPairNo = 5.5.
 %        N ... number of interrogation area (= of velocity vectors)
 %        X, Y ... matrices with centers of interrogation areas
-%        Status ... matrix with statuis of velocity vectors. Possible values are:
-%           -3 ... (reserved - set by pivCrossCorr) peak detection failed
-%           -2 ... (reserved - set by pivCrossCorr) cross-correlation failed
-%           -1 ... masked
-%            0 ... valid
-%            1 ... (reserved - set by pivValidate) indicated as spurious by median test
-%            2 ... (reserved - set by pivReplace) interpolated
-%            3 ... (reserved - set by pivSmooth) smoothed
 %        Status ... matrix with statuis of velocity vectors (uint8). Bits have this coding:
 %            1 ... masked (set by pivInterrogate)
 %            2 ... cross-correlation failed (set by pivCrossCorr)
@@ -69,7 +70,7 @@ function [exIm1,exIm2,pivData] = pivInterrogate(im1,im2,pivData,pivPar)
 %        iaSizeX, iaSizeY, iaStepX, iaStepY ... copy of dorresponding fields in pivPar input
 %        imSizeX, imSizeY ... image size in pixels
 %        
-%        
+%%
 % This subroutine is a part of
 %
 % =========================================
@@ -77,43 +78,45 @@ function [exIm1,exIm2,pivData] = pivInterrogate(im1,im2,pivData,pivPar)
 % =========================================
 %
 % PIVsuite is a set of subroutines intended for processing of data acquired with PIV (particle image
-% velocimetry). 
+% velocimetry) within Matlab environment.
 %
 % Written by Jiri Vejrazka, Institute of Chemical Process Fundamentals, Prague, Czech Republic
 %
 % For the use, see files example_XX_xxxxxx.m, which acompany this file. PIVsuite was tested with
-% Matlab 7.12 (R2011a) and 7.14 (R2012a).
+% Matlab 8.2 (R2013b).
 %
-% In the case of a bug, contact me: vejrazka (at) icpf (dot) cas (dot) cz
+% In the case of a bug, please, contact me: vejrazka (at) icpf (dot) cas (dot) cz
 %
 %
 % Requirements:
 %     Image Processing Toolbox
-% 
+%         (required only if pivPar.smMethod is set to 'gaussian')
+%
 %     inpaint_nans.m
 %         subroutine by John D'Errico, available at http://www.mathworks.com/matlabcentral/fileexchange/4551
 %
 %     smoothn.m
-%         subroutine by Damien Garcia, available at 
+%         subroutine by Damien Garcia, available at
 %         http://www.mathworks.com/matlabcentral/fileexchange/274-smooth
 %
 % Credits:
-%    PIVsuite is a redesigned version of PIVlab software [3], developped by W. Thielicke and E. J. Stamhuis. 
-%    Some parts of this code are copied or adapted from it (especially from its piv_FFTmulti.m subroutine). 
+%    PIVsuite is a redesigned version of a part of PIVlab software [3], developped by W. Thielicke and
+%    E. J. Stamhuis. Some parts of this code are copied or adapted from it (especially from its
+%    piv_FFTmulti.m subroutine).
+%
 %    PIVsuite uses 3rd party software:
 %        inpaint_nans.m, by J. D'Errico, [2]
 %        smoothn.m, by Damien Garcia, [5]
-%        
+%
 % References:
-%   [1] Adrian & Whesterweel, Particle Image Velocimetry, Cambridge University Press 2011
+%   [1] Adrian & Whesterweel, Particle Image Velocimetry, Cambridge University Press, 2011
 %   [2] John D'Errico, inpaint_nans subroutine, http://www.mathworks.com/matlabcentral/fileexchange/4551
 %   [3] W. Thielicke and E. J. Stamhuid, PIVlab 1.31, http://pivlab.blogspot.com
 %   [4] Raffel, Willert, Wereley & Kompenhans, Particle Image Velocimetry: A Practical Guide. 2nd edition,
-%       Springer 2007
+%       Springer, 2007
 %   [5] Damien Garcia, smoothn subroutine, http://www.mathworks.com/matlabcentral/fileexchange/274-smooth
-
-
-% Acronyms and meaning of variables used in this subroutine:
+%
+%% Acronyms and meaning of variables used in this subroutine:
 %    IA ... concerns "Interrogation Area"
 %    im ... image
 %    dx ... some index
@@ -127,53 +130,81 @@ function [exIm1,exIm2,pivData] = pivInterrogate(im1,im2,pivData,pivPar)
 
 
 
-%% 0. Read images, if required. Extract from pars some frequently used fields (for shortenning the code); 
+%% 0. Read images, if required. Read mask images. Preprocess images, if required
+% Extract from pivPar some frequently used fields (for shortenning the code);
 iaSizeX = pivPar.iaSizeX;
 iaSizeY = pivPar.iaSizeY;
 iaStepX = pivPar.iaStepX;
 iaStepY = pivPar.iaStepY;
 
 % read images if im1 and im2 are filepaths
-if ischar(im1)
-    [imgNo] = treatImgPath(im1);
-    pivData.imFilename1 = im1;
-    pivData.imNo1 = imgNo;
-    im1 = imread(im1);
-end
-if ischar(im2)
-    [imgNo] = treatImgPath(im2);
-    pivData.imFilename2 = im2;
-    pivData.imNo2 = imgNo;
-    im2 = imread(im2);
-end
-try
-    pivData.imPairNo = (pivData.imNo1 + pivData.imNo2)/2;
-catch      %#ok<CTCH>
-end
-
-im1 = double(im1);
-im2 = double(im2);
-
-% read image masks if pivPar.imMask1 and pivPar.imMask2 are filepaths
-if ischar(pivPar.imMask1)
-    pivData.imMaskFilename1 = pivPar.imMask1;
-    if ~isempty(pivPar.imMask1), imMask1 = imread(pivPar.imMask1);
-    else
-        imMask1 = [];
+if ~isfield(pivData,'imArray1')   % read files only if not read in the previous pass
+    if ischar(im1)
+        [imgNo] = treatImgPath(im1);
+        pivData.imFilename1 = im1;
+        pivData.imNo1 = imgNo;
+        im1 = imread(im1);
     end
-else
-    imMask1 = pivPar.imMask1;
-end
-if ischar(pivPar.imMask2)
-    pivData.imMaskFilename2 = pivPar.imMask2;
-    if ~isempty(pivPar.imMask2), imMask2 = imread(pivPar.imMask2);
-    else
-        imMask2 = [];
+    if ischar(im2)
+        [imgNo] = treatImgPath(im2);
+        pivData.imFilename2 = im2;
+        pivData.imNo2 = imgNo;
+        im2 = imread(im2);
     end
+    try
+        pivData.imPairNo = (pivData.imNo1 + pivData.imNo2)/2;
+    catch      %#ok<CTCH>
+    end
+    
+    im1 = single(im1);
+    im2 = single(im2);
+    
+    % read image masks if pivPar.imMask1 and pivPar.imMask2 are filepaths
+    if ischar(pivPar.imMask1)
+        pivData.imMaskFilename1 = pivPar.imMask1;
+        if ~isempty(pivPar.imMask1), imMask1 = imread(pivPar.imMask1);
+        else
+            imMask1 = [];
+        end
+    else
+        imMask1 = pivPar.imMask1;
+    end
+    if ischar(pivPar.imMask2)
+        pivData.imMaskFilename2 = pivPar.imMask2;
+        if ~isempty(pivPar.imMask2), imMask2 = imread(pivPar.imMask2);
+        else
+            imMask2 = [];
+        end
+    else
+        imMask2 = pivPar.imMask2;
+    end
+    pivData.imMaskArray1 = imMask1;
+    pivData.imMaskArray2 = imMask2;
+    
+    % check the consistence of images
+    auxDiff = abs(size(im1)-size(im2))+abs(size(imMask1)-size(imMask2));
+    if numel(imMask1) > 0
+        auxDiff = auxDiff + abs(size(im1)-size(imMask1));
+    end
+    if sum(auxDiff)>0
+        error('PIVsuite:InconsistImgs','Image 1, Image 2 (and possible mask image) are inconsistent in size.');
+    end
+    
+    % Preprocess images.
+    if strcmpi(pivPar.iaPreprocMethod,'minmax')
+        im1 = minMaxFilter(im1,pivPar,imMask1);
+        im2 = minMaxFilter(im2,pivPar,imMask2);
+    end
+    pivData.imArray1 = im1;
+    pivData.imArray2 = im2;
+    
 else
-    imMask2 = pivPar.imMask2;
+    % if images read and preprocessed in previous pass, read them from pivData variable
+    im1 = pivData.imArray1;
+    im2 = pivData.imArray2;
+    imMask1 = pivData.imMaskArray1;
+    imMask2 = pivData.imMaskArray2;
 end
-
 
 %% 1. Compute position of IA's
 % get size of the image
@@ -195,7 +226,7 @@ iaStopX = iaStartX + iaSizeX - 1;  % last columns of IA's
 iaStopY = iaStartY + iaSizeY - 1;  % last rows of IA's
 iaCenterX = (iaStartX + iaStopX)/2;    % center of IA's (usually between pixels)
 iaCenterY = (iaStartY + iaStopY)/2;
-[X,Y] = meshgrid(iaCenterX-1,iaCenterY-1); % this is a mesh, at which velocity is detrmined
+[X,Y] = meshgrid(iaCenterX,iaCenterY); % this is a mesh, at which velocity is detrmined
         % in last line, there is iaCenterX-1, because pixel im(1,1) has coordinates (0,0)
 
 % initialize status variable
@@ -214,7 +245,7 @@ else
     Uest = pivData.U;
     Vest = pivData.V;
 end
-% if velocity estimation is zero (happens also if not spcified), set method as 'baasic'
+% if velocity estimation is zero (happens also if not spcified), set method as 'basic'
 if max(max(abs(Uest)))+max(max(abs(Vest)))<20*eps
     pivPar.iaMethod = 'basic';
 end
@@ -224,8 +255,8 @@ if strcmpi(pivPar.iaMethod,'basic')
 end
 
 
-%% 2. Mask image
-% mark masked pixels as NaNs. Later, NaNs are replaced by mean of non-masked pixels within each IA 
+%% 2. Mask images
+% mark masked pixels as NaNs. Later, NaNs are replaced by mean of non-masked pixels within each IA. 
 if numel(imMask1) > 0
     imMask1 = ~logical(imMask1); 
     im1(imMask1) = NaN;
@@ -243,7 +274,7 @@ end
 % the same as original image (except cropping)
 
 % initialize expanded images
-exIm1 = zeros(iaNY*iaSizeY, iaNX*iaSizeX) + NaN;
+exIm1 = single(zeros(iaNY*iaSizeY, iaNX*iaSizeX) + NaN);
 exIm2 = exIm1;
 
 % do everything with first image, then with the second
@@ -353,7 +384,8 @@ switch lower(pivPar.iaMethod)
         end
     case {'deflinear','defspline'}
         % cases with deformable IAs
-        % create larger X and Y mesh, used for extrapolation of velocity estimates for methods 'deflinear' and 'defspline'
+        % create new X and Y mesh. Make it larger (used for extrapolation of velocity estimates for methods
+        % 'deflinear' and 'defspline')
         auxCenterX = [iaCenterX(1)-(ceil(iaCenterX(1)/iaStepX):-1:1)'*iaStepX ;...
             iaCenterX ; ...
             iaCenterX(end)+ (1:ceil((imSizeX-iaCenterX(end))/iaStepX))'*iaStepX];
@@ -361,22 +393,37 @@ switch lower(pivPar.iaMethod)
             iaCenterY ; ...
             iaCenterY(end)+ (1:ceil((imSizeY-iaCenterY(end))/iaStepY))'*iaStepY];
         [Xextrap,Yextrap] = meshgrid(auxCenterX,auxCenterY);
-        % extrapolate velocity estimates to the exprapolation mesh
-        Xest = reshape(Xest,numel(Xest),1);
-        Yest = reshape(Yest,numel(Yest),1);
-        Uest = reshape(Uest,numel(Uest),1);
-        Vest = reshape(Vest,numel(Vest),1);
+        % extrapolate velocity estimates to the extrapolation mesh
         auxOK = logical(~isnan(Uest+Vest));
-        Xest = Xest(auxOK);
-        Yest = Yest(auxOK);
-        Uest = Uest(auxOK);
-        Vest = Vest(auxOK);
-        Uestimator = TriScatteredInterp(Xest,Yest,Uest,'natural');
-        Vestimator = TriScatteredInterp(Xest,Yest,Vest,'natural');
-        Uextrap = Uestimator(Xextrap,Yextrap);
-        Vextrap = Vestimator(Xextrap,Yextrap);
-        Uextrap = inpaint_nans(Uextrap);
-        Vextrap = inpaint_nans(Vextrap);
+        Uest(~auxOK) = NaN;
+        Vest(~auxOK) = NaN;
+        Uest = inpaint_nans(Uest);
+        Vest = inpaint_nans(Vest);
+        try
+            % this will run only in new versions of Matlab
+            Uestimator = griddedInterpolant(Xest',Yest',Uest','spline');
+            Vestimator = griddedInterpolant(Xest',Yest',Vest','spline');
+            Uextrap = Uestimator(Xextrap',Yextrap');
+            Vextrap = Vestimator(Xextrap',Yextrap');
+            Uextrap = inpaint_nans(Uextrap');
+            Vextrap = inpaint_nans(Vextrap');
+        catch err
+            % if error (griddedInterpolant missing in older versions), use TriScatteredInterp
+            if (strcmp(err.identifier,'MATLAB:UndefinedFunction'))
+                auxXest = reshape(Xest,numel(Xest),1);
+                auxYest = reshape(Yest,numel(Yest),1);
+                auxUest = reshape(Uest,numel(Uest),1);
+                auxVest = reshape(Vest,numel(Vest),1);
+                Uestimator = TriScatteredInterp(auxXest,auxYest,auxUest,'natural');   %#ok<DTRIINT>
+                Vestimator = TriScatteredInterp(auxXest,auxYest,auxVest,'natural'); %#ok<DTRIINT>
+                Uextrap = Uestimator(Xextrap,Yextrap);
+                Vextrap = Vestimator(Xextrap,Yextrap);
+                Uextrap = inpaint_nans(Uextrap);
+                Vextrap = inpaint_nans(Vextrap);
+            else
+                retrow(err);
+            end
+        end
         % initialize matrices with subtracted deformation
         U0 = X + NaN;
         V0 = U0;
@@ -392,7 +439,7 @@ switch lower(pivPar.iaMethod)
                 Udef = interp2(Xextrap,Yextrap,Uextrap,coordX,coordY,'*spline');
                 Vdef = interp2(Xextrap,Yextrap,Vextrap,coordX,coordY,'*spline');
             otherwise
-                fprintf('Error (pivInterrogate.m): unknown iaMethod.\n');
+                error('PIVsuite:iaMethod','Unknown iaMethod.');
         end
         % deform the coordinates
         switch lower(pivPar.iaImageToDeform)
@@ -454,7 +501,7 @@ switch lower(pivPar.iaMethod)
                     end
                 end % end of "Image 2 deforms"
             otherwise
-                fprintf('Error (pivInterrogate.m): Unkonwn iaImageInterpolationMethod\n');
+                error('PIVsuite:iaImageInterpolationMethod','Unkonwn iaImageInterpolationMethod');
         end
         % set pixels outside image to NaN
         im1(masked1) = NaN;
@@ -482,9 +529,13 @@ switch lower(pivPar.iaMethod)
                 auxV = Vdef(iaStartY(ky):iaStopY(ky),iaStartX(kx):iaStopX(kx));
                 U0(ky,kx) = sum(sum(auxU.*logical((~masked1).*(~masked2))))/sum(sum(logical((~masked1).*(~masked2))));
                 V0(ky,kx) = sum(sum(auxV.*logical((~masked1).*(~masked2))))/sum(sum(logical((~masked1).*(~masked2))));
-                % check the number of masked or outside pixels, and if larget than 1/2*iaSizeX*iaSizeY,
-                % consider IA as masked or outside
-                if sum(sum(logical(masked1+masked2))) > 0.5*iaSizeX*iaSizeY;
+                % consider IA as masked if its center is masked in both images
+                auxM1 = indexi(imMask1,Y(ky,kx),X(ky,kx));
+                auxM2 = indexi(imMask2,Y(ky,kx),X(ky,kx));
+                if auxM1+auxM2>=1 ||...
+                ...% check the number of masked or border pixels, and if larger than 1/3*iaSizeX*iaSizeY,
+                ...% consider IA as masked 
+                    sum(sum(logical(masked1+masked2))) > 0.5*iaSizeX*iaSizeY;
                     status(ky,kx) = 1;
                 end
             end
@@ -513,6 +564,68 @@ end
 
 %% LOCAL FUNCTIONS
 
+function [ corrected ] = minMaxFilter(im,pivPar,Mask)
+% MinMax filter - corrects uneven background and normalizes image contrast
+%   adapted following algorithm described on p. 250, Ref. [1]
+%
+%   This subroutine requires image processing toolbox
+%
+S = pivPar.iaMinMaxSize;
+L = pivPar.iaMinMaxLevel;
+% create masking matrix (ones in a circular matrix)
+domain = ones(S,S);
+auxX = ones(S,1)*(-(S-1)/2:1:(S-1)/2);
+auxY = (-(S-1)/2:1:(S-1)/2)'*ones(1,S);
+auxD = sqrt(auxX.^2+auxY.^2);
+domain(auxD+1/4 >= (S-1)/2) = 0;
+N = sum(sum(domain));
+domain = single(domain);
+% if no Mask is specified, skip it
+if nargin<3
+    Masking = false;
+elseif numel(Mask)==0
+    Masking = false;
+else
+    % check if masking is present
+    Mask = (Mask==0);    % Masked pixel are 1 now
+    Masking = sum(sum(Mask))>0;
+end
+% Compute local low value and filter it
+im = double(im);
+if Masking
+    im1 = im;
+    im1(Mask) = max(max(im1));
+    Lo = ordfilt2(im1,1,domain,'symmetric');
+    Lo = filter2(domain,Lo)/N;
+else
+    Lo = filter2(domain,ordfilt2(im,1,domain,'symmetric'))/N;
+end
+% Compute local high value and filter it
+if Masking
+    im1 = im;
+    im1(Mask) = min(min(im1));
+    Hi = ordfilt2(im1,N,domain,'symmetric');
+    Hi = filter2(domain,Hi)/N;
+else
+    Hi = filter2(domain,ordfilt2(im,N,domain,'symmetric'))/N;
+end
+% enlarge mask (pixels in enlarged mask will not be considered during normalization)
+if Masking
+    MaskF = imdilate(Mask,domain);
+end
+% compute contrast and put lower limit on it
+contrast = Hi-Lo;
+contrast = (contrast>L).*(contrast-L) + L;
+corrected = single((im-Lo)./contrast);
+% normalize image
+corrMax = corrected;
+if Masking, corrMax(MaskF) = 0;end
+corrMax = max(max(corrMax(S+1:end-S,S+1:end-S)));
+corrected = 255*corrected/corrMax;
+corrected(corrected>255) = single(255);
+end
+
+
 function [imgNo, filename, folder] = treatImgPath(path)
 % separate the path to get the folder, filename, and number if contained in the name
 filename = '';
@@ -520,7 +633,7 @@ imgNo = [];
 folder = '';
 if numel(path)>0
     path = path(end:-1:1);
-    I = find(path==filesep);
+    I = find(path=='/'|path=='\');
     I = I(1);
     Idot = find(path=='.');
     Idot = Idot(1);
@@ -544,4 +657,18 @@ if numel(path)>0
         imgNo = [];
     end
 end
+end
+
+
+function [out] = indexi(array,I1,I2)
+% index array for getting values between items (if In is not integer, give value on midway betweem pixels);
+if numel(array) == 0
+    out = 0; 
+    return;
+end
+A1 = array(floor(I1),floor(I2));
+A2 = array(ceil(I1),floor(I2));
+A3 = array(floor(I1),ceil(I2));
+A4 = array(ceil(I1),ceil(I2));
+out = (A1+A2+A3+A4)/4;
 end

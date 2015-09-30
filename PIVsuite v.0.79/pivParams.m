@@ -6,6 +6,7 @@ function [pivPar,pivData] = pivParams(pivData,pivParIn,action,varargin)
 %   2. [pivPar,pivData] = pivParams(pivData,pivParIn,'DefaultsSeq')
 %   3. [pivPar,pivData] = pivParams(pivData,pivParIn,'SinglePass',K)
 %   4. [pivPar,pivData] = pivParams(pivData,pivParIn,'Defaults1Px')
+%   4. [pivPar,pivData] = pivParams(pivData,pivParIn,'DefaultsJobManagement')
 %
 % Usage 1: Parameters present in pivParIn are copied to output structure pivPar. pivPar is then completed by
 % missing parameters, which are set to defaults. This usage is intended for setting pivPar for the use with
@@ -21,6 +22,10 @@ function [pivPar,pivData] = pivParams(pivData,pivParIn,action,varargin)
 % Usage 4: Parameters present in pivParIn are copied to output structure pivPar. pivPar is then completed by
 % missing parameters, which are set to defaults. This usage is intended for setting pivPar for the use with
 % pivAnalyzeSequence1Px.
+%
+% Usage 4: Parameters present in pivParIn are copied to output structure pivPar. pivPar is then completed by
+% missing parameters jmParallelJobs and jmLockfileExpirationTime, which are set to defaults. This usage is called
+% by pivManageJobs; users usually do not need to use this options themselves.
 %
 %
 % Inputs:
@@ -87,13 +92,30 @@ function [pivPar,pivData] = pivParams(pivData,pivParIn,action,varargin)
 %             - default value: 'defspline'
 %          iaImageInterpolationMethod ... way, how the images are interpolated when deformable IAs are used
 %                  (for .iaMethod == 'deflinear' or 'defspline'. Possible values are:
-%              'linear', 'natural' ... interpolation is carried out using interp2 function with option either
+%              'linear', 'spline' ... interpolation is carried out using interp2 function with option either
 %                                     '*linear' or '*spline'
-%             - default value: 'linear'
+%             - default value: 'natural'
+%          iaPreprocMethod ... defines image preprocessing method. Possible values are
+%               'none' ... no image preprocessing
+%               'MinMax' ... MinMax filter is applied (see p. 248 in Ref. [1])
+%             - default value: 'none'
+%          iaMinMaxSize ... (applies only if iaPreprocMethod is 'MinMax'). Size of MinMax filter kernel.
+%             - default value: 7
+%          iaMinMaxLevel ... (applies only if iaPreprocMethod is 'MinMax'). Contrast level, below which
+%               contrast in not more enhanced.
+%             - default value: 16
 %      --- prefix im - relates to the images
 %          imMask1, imMask2 ... Masking images for im1 and im2. It should be either empty (no mask), or of the
 %               same size as im1 and im2. Masked pixels should be 0 in .imMaskX, non-masked pixels should be 1
 %             - default value: empty []
+%      --- prefix jm - these fields are related to job management, used mostly by subroutines pivManageJobs.m and
+%               pivAnalyzeImageSequemce.m
+%          jmParallelJobs ... defines, to how many jobs is the treatment of present task distributed. Used by
+%               pivManageJobs.m.
+%          jmLockFile ... lock file name and path. If this field exists, this file is rewritten
+%               with a status message everytimes an image pair is treated. 
+%          jmLockExpirationTime ... maximum age of a lock file. If a lock file is older than this limit, it is
+%               regarded as non-existent. Used by pivManageJobs.m.
 %      --- prefix cc - these fields are used mostly in subroutines pivCrossCorr.m
 %          ccRemoveIAMean ... if =0, do not remove IA's mean before cross-correlation; if =1, remove the mean;
 %              if in between, remove the mean partially
@@ -105,14 +127,35 @@ function [pivPar,pivData] = pivParams(pivData,pivParIn,action,varargin)
 %            - Note: IA offset is not included in the displacement accounted by ccMaxDisplacement, hence real
 %              displacement can be larger if ccIAmethod is any other than 'basic'.
 %            - default value: 0.9
+%          ccWindow ... windowing function. Possible values are 
+%              'uniform', 'Gauss', 'parzen', 'Hanning', 'Welch' ...windows described on p. 389 in Ref. [1]
+%              'Nogueira'... see p. 396 in Ref. [1]
+%              'Hanning2', 'Hanning4' ... Hanning window, which is in second or fourth power, respectively
+%              power, respectively (the window is then more narrow).
+%            - default value: 'Welch'. If missing in pivPar during evaluation, 'uniform' is considered for
+%              compatibility reasons.
+%          ccCorrectWindowBias ... Set whether cc is corrected for bias due to IA windowing.
+%            - default value: false 
+%            - ATTENTION: option true increases strongly noise on data, probably something is wrong.
+%          ccMethod ... set methods for finding cross-correlation of interrogation areas. Possible values are
+%              'fft' (use Fast Fourrier Transform' and 'dcn' (use discrete convolution). Option 'fft' is more
+%              suitable for initial guess of velocity. Option 'dcn' is suitable for final iterations of the
+%              velocity field, if the displacement corrections are already small.
+%            - default value: 'fft'
+%          ccMaxDCNdist ... Defines maximum displacement, for which the correlation is computed by DCN method 
+%              (apllies only for ccMethod = 'dcn'). 
+%            - default value: 1
 %      --- prefix vl - these fields relates to vector validation, subroutine pivValidate.m. Parameters without 
 %              "Seq" are used for validation of of individual image pairs. Parameters with "Seq" are used when
 %              an image sequence is validated.
 %              individual image pairs.
+%          vlMinCC ... minimum value of cross-correlation peak. Vectors with .ccPeak < vlMinCC*median(ccPeak) 
+%              will be marked as invalid. If vlMinCC == 0, this test is skipped.
+%            - default value: 0.3
 %          vlTresh, vlEps ... Define treshold for the median test. To accepted, the difference of actual vector
 %              from the median (of vectors in the neighborhood) should be at most vlTresh *(vlEps +
 %              (neighborhood vectors) - (their median))
-%            - default values: vlTresh = 2, vlEps = 0.06
+%            - default values: vlTresh = 2, vlEps = 0.1
 %          vlDist ... to what distance median test is performed (if vlDist = 1, kernel has size 3x3; for
 %              vlDist = 2, kernel is 5x5, and so on)
 %            - default value: 2
@@ -150,6 +193,11 @@ function [pivPar,pivData] = pivParams(pivData,pivParIn,action,varargin)
 %              'inpaintGarciaT' ... use Garcia's subroutine "inpaintn". If pivData contains data for image 
 %                   sequence, replacement considers also values in other time slices.
 %            - default value: 'inpaintT'
+%      --- prefix cr - controls, how predictor-corrector correction is applied (affects pivCorrector.m). 
+%          crAmount ... Controls amount, to which predictor-corrector is applied. If 0, correction is not
+%              applied (pivCorrector.m quits withoud modifying the velocity field). If 1, correction is
+%              applied. If 0 < crAmount < 1, correction is applied, but it is weaker than it should be.
+%            - default value: 0
 %      --- prefix seq - controls, which images are processed as image pairs when dealing with sequences
 %          (affects pivCreateImageaSequence.m). Parameters are:
 %          seqPairInterval ... (if unspecified, default value is 2): interval between the index of first 
@@ -255,51 +303,53 @@ function [pivPar,pivData] = pivParams(pivData,pivParIn,action,varargin)
 %    pivData ... Structure with PIV data. If action is 'SinglePass', parameters pivPar are added to pivData at
 %         the input and copied to output
 %
-%        
+%%
 % This subroutine is a part of
 %
 % =========================================
 %               PIVsuite
-% ======================-===================
+% =========================================
 %
 % PIVsuite is a set of subroutines intended for processing of data acquired with PIV (particle image
-% velocimetry). 
+% velocimetry) within Matlab environment.
 %
 % Written by Jiri Vejrazka, Institute of Chemical Process Fundamentals, Prague, Czech Republic
 %
 % For the use, see files example_XX_xxxxxx.m, which acompany this file. PIVsuite was tested with
-% Matlab 7.12 (R2011a) and 7.14 (R2012a).
+% Matlab 8.2 (R2013b).
 %
-% In the case of a bug, contact me: vejrazka (at) icpf (dot) cas (dot) cz
+% In the case of a bug, please, contact me: vejrazka (at) icpf (dot) cas (dot) cz
 %
 %
 % Requirements:
 %     Image Processing Toolbox
-% 
+%         (required only if pivPar.smMethod is set to 'gaussian')
+%
 %     inpaint_nans.m
 %         subroutine by John D'Errico, available at http://www.mathworks.com/matlabcentral/fileexchange/4551
 %
 %     smoothn.m
-%         subroutine by Damien Garcia, available at 
+%         subroutine by Damien Garcia, available at
 %         http://www.mathworks.com/matlabcentral/fileexchange/274-smooth
 %
 % Credits:
-%    PIVsuite is a redesigned version of PIVlab software [3], developped by W. Thielicke and E. J. Stamhuis. 
-%    Some parts of this code are copied or adapted from it (especially from its piv_FFTmulti.m subroutine). 
+%    PIVsuite is a redesigned version of a part of PIVlab software [3], developped by W. Thielicke and
+%    E. J. Stamhuis. Some parts of this code are copied or adapted from it (especially from its
+%    piv_FFTmulti.m subroutine).
+%
 %    PIVsuite uses 3rd party software:
 %        inpaint_nans.m, by J. D'Errico, [2]
 %        smoothn.m, by Damien Garcia, [5]
-%        
+%
 % References:
-%   [1] Adrian & Whesterweel, Particle Image Velocimetry, Cambridge University Press 2011
+%   [1] Adrian & Whesterweel, Particle Image Velocimetry, Cambridge University Press, 2011
 %   [2] John D'Errico, inpaint_nans subroutine, http://www.mathworks.com/matlabcentral/fileexchange/4551
 %   [3] W. Thielicke and E. J. Stamhuid, PIVlab 1.31, http://pivlab.blogspot.com
 %   [4] Raffel, Willert, Wereley & Kompenhans, Particle Image Velocimetry: A Practical Guide. 2nd edition,
-%       Springer 2007
+%       Springer, 2007
 %   [5] Damien Garcia, smoothn subroutine, http://www.mathworks.com/matlabcentral/fileexchange/274-smooth
-
-
-% Acronyms and meaning of variables used in this subroutine:
+%
+%% Acronyms and meaning of variables used in this subroutine:
 %    IA ... concerns "Interrogation Area"
 %    im ... image
 %    dx ... some index
@@ -312,7 +362,7 @@ function [pivPar,pivData] = pivParams(pivData,pivParIn,action,varargin)
 %    sm ... smoothing
 %    sp ... single pixel
 %    Word "velocity" should be understood as "displacement"
-
+%%
 
 switch lower(action)
     case 'defaults'  % SET DEFAULT VALUES TO UNSPECIFIED FIELDS OF PARIN
@@ -346,30 +396,43 @@ switch lower(action)
                 pivPar.iaSizeY = aux(1:pivPar.anNpasses);
             end
         end
-        % other pivParameters
-        pivPar = chkfield(pivPar,'iaStepX',floor(pivPar.iaSizeX/2));
-        pivPar = chkfield(pivPar,'iaStepY',floor(pivPar.iaSizeY/2));
+        if ~isfield(pivPar,'iaStepX')
+            if isfield(pivPar,'iaStepY')
+                pivPar.iaStepX = pivPar.iaStepY;
+            else
+                pivPar.iaStepX = floor(pivPar.iaSizeX/2);
+            end
+        end        % other pivParameters
+        if ~isfield(pivPar,'iaStepY')
+            if isfield(pivPar,'iaStepX')
+                pivPar.iaStepY = pivPar.iaStepX;
+            else
+                pivPar.iaStepY = floor(pivPar.iaSizeY/2);
+            end
+        end        % other pivParameters
         pivPar = chkfield(pivPar,'iaMethod','defspline');
         pivPar = chkfield(pivPar,'imMask1',[]);
         pivPar = chkfield(pivPar,'imMask2',[]);
         pivPar = chkfield(pivPar,'iaImageToDeform','image1');
-        pivPar = chkfield(pivPar,'iaImageInterpolationMethod','linear');
+        pivPar = chkfield(pivPar,'iaImageInterpolationMethod','spline');
+        pivPar = chkfield(pivPar,'iaPreprocMethod','none');
         pivPar = chkfield(pivPar,'ccRemoveIAMean',1);
         pivPar = chkfield(pivPar,'ccMaxDisplacement',0.9);
+        pivPar = chkfield(pivPar,'ccWindow','Welch');
+        pivPar = chkfield(pivPar,'ccCorrectWindowBias',false);
+        pivPar = chkfield(pivPar,'ccMaxDCNdist',1);
+        pivPar = chkfield(pivPar,'crAmount',0);
+        pivPar = chkfield(pivPar,'vlMinCC',0.3);
         pivPar = chkfield(pivPar,'vlTresh',2);
-        pivPar = chkfield(pivPar,'vlEps',0.06);
-        pivPar = chkfield(pivPar,'vlPasses',2);
-        pivPar = chkfield(pivPar,'vlDist',2);
-        % smMethod: default is 'smoothn', except last pass, for which it is 'none'
-        aux = cell(1,pivPar.anNpasses);
-        for kk = 1:pivPar.anNpasses-1
-            aux{kk} = 'smoothn';
-        end
-        aux{end} = 'none';
-        pivPar = chkfield(pivPar,'smMethod',aux);
-        % other pivParameters
-        pivPar = chkfield(pivPar,'smSigma',0.2);
-        pivPar = chkfield(pivPar,'rpMethod','inpaintT');
+        pivPar = chkfield(pivPar,'vlEps',0.1);
+        pivPar = chkfield(pivPar,'vlPasses',[2 1 1]);
+        pivPar = chkfield(pivPar,'vlDist', 2*ones(pivPar.anNpasses,1));
+        pivPar = chkfield(pivPar,'smMethod','smoothn');
+        pivPar = chkfield(pivPar,'smSigma',NaN);
+        pivPar = chkfield(pivPar,'rpMethod','inpaint');
+        pivPar = chkfield(pivPar,'qvPair',{}); 
+           % possible setting:{'Umag','quiver','selectStat','valid','linespec','-k','quiver','selectStat',...
+           % 'replaced','linespec','-w'}
         % set smSize only if smMethod = Gauss
         aux = false;
         if iscell(pivPar.smMethod)
@@ -380,24 +443,41 @@ switch lower(action)
         if aux
             pivPar = chkfield(pivPar,'smSize',5);
         end
-        pivPar = chkfield(pivPar,'qvPair',{'Umag','quiver','selectStat','valid','linespec','-k',...    
-            'quiver','selectStat','replaced','linespec','-w'});
-        % sort fields alphabetically
-        fieldNames = sort(fieldnames(pivPar));
-        aux = [];
-        for kk = 1:numel(fieldNames)
-            aux.(fieldNames{kk}) = pivPar.(fieldNames{kk});
+        % set ccMethod to 'dcn' if ia size is 12 or smaller, or if previous iteration used the same IA size
+        aux = cell(1,numel(pivPar.iaSizeX));
+        for kk = 1:numel(pivPar.iaSizeX)
+            aux{kk} = 'dcn';
+            if kk==1, aux{kk} = 'fft'; end
+            if kk>1 && (max(pivPar.iaSizeX(kk),pivPar.iaSizeY(kk)) > 12) && ...
+                ~((pivPar.iaSizeX(kk) == pivPar.iaSizeX(kk-1)) && ...
+                    (pivPar.iaSizeY(kk) == pivPar.iaSizeY(kk-1)))
+                aux{kk} = 'fft';
+            end
         end
-        pivPar = aux;
+        pivPar = chkfield(pivPar,'ccMethod',aux);
+        % set validation to have two passes in the first and last PIV pass
+        aux = ones(1,pivPar.anNpasses);
+        aux(1) = 2; aux(end) = 2;
+        pivPar = chkfield(pivPar,'vlPasses',aux);
+        % set validation distance to be 1 in the first pass, 2 in other passes
+        aux = 2*ones(1,pivPar.anNpasses);
+        aux(1) = 1;
+        pivPar = chkfield(pivPar,'vlDist',aux);
+        % set iaMinMaxSize and iaMinMaxLeve, is applicable
+        if strcmpi(pivPar.iaPreprocMethod,'MinMax')
+            pivPar = chkfield(pivPar,'iaMinMaxSize',7);
+            pivPar = chkfield(pivPar,'iaMinMaxLevel',16);
+        end
+        % sort fields alphabetically
+        pivPar = orderfields(pivPar);
         
         
     case 'defaultsseq'   % SET DEFAULTS WHEN PROCESSING A SEQUENCE OF IMAGES
-        % set defaults for each image pair
-        [pivPar,pivData] = pivParams(pivData,pivParIn,'Defaults');
         % add additional defaults
-        pivPar = chkfield(pivPar,'vlDistTSeq',1);
+        pivPar = pivParIn;
+        pivPar = chkfield(pivPar,'vlDistTSeq',0);
         pivPar = chkfield(pivPar,'vlTreshSeq',2);
-        pivPar = chkfield(pivPar,'vlEpsSeq',0.06);
+        pivPar = chkfield(pivPar,'vlEpsSeq',0.1);
         pivPar = chkfield(pivPar,'vlPassesSeq',1);
         pivPar = chkfield(pivPar,'vlDistSeq',2);
         pivPar = chkfield(pivPar,'smMethodSeq','none');
@@ -412,13 +492,13 @@ switch lower(action)
         pivPar = chkfield(pivPar,'anVelocityEst','previous');
         pivPar = chkfield(pivPar,'anPairsOnly',false);
         pivPar = chkfield(pivPar,'anStatsOnly',false);        
-        % sort fields alphabetically
-        fieldNames = sort(fieldnames(pivPar));
-        aux = [];
-        for kk = 1:numel(fieldNames)
-            aux.(fieldNames{kk}) = pivPar.(fieldNames{kk});
+        if strcmpi(pivPar.anVelocityEst,'previous')||strcmpi(pivPar.anVelocityEst,'previousSmooth')
+            pivPar = chkfield(pivPar,'ccMethod','dcn');
         end
-        pivPar = aux;
+        % set defaults for each image pair
+        [pivPar,pivData] = pivParams(pivData,pivPar,'Defaults');
+        % sort fields alphabetically
+        pivPar = orderfields(pivPar);
 
     case 'defaults1px'   % SET DEFAULTS WHEN PROCESSING A SEQUENCE OF IMAGES USING SINGLE-PIXEL CORRELATION
         % set defaults for each image pair
@@ -503,8 +583,17 @@ switch lower(action)
         pivPar = copyvalue(pivPar,pivParIn,'iaMethod',kpass,2);
         pivPar = copyvalue(pivPar,pivParIn,'iaImageToDeform',kpass,2);
         pivPar = copyvalue(pivPar,pivParIn,'iaImageInterpolationMethod',kpass,2);
+        pivPar = copyvalue(pivPar,pivParIn,'iaPreprocMethod',kpass,2);
+        pivPar = copyvalue(pivPar,pivParIn,'iaMinMaxSize',kpass,2);
+        pivPar = copyvalue(pivPar,pivParIn,'iaMinMaxLevel',kpass,2);
         pivPar = copyvalue(pivPar,pivParIn,'ccRemoveIAMean',kpass,2);
         pivPar = copyvalue(pivPar,pivParIn,'ccMaxDisplacement',kpass,2);
+        pivPar = copyvalue(pivPar,pivParIn,'ccWindow',kpass,2); 
+        pivPar = copyvalue(pivPar,pivParIn,'ccCorrectWindowBias',kpass,2); 
+        pivPar = copyvalue(pivPar,pivParIn,'ccMethod',kpass,2); 
+        pivPar = copyvalue(pivPar,pivParIn,'ccMaxDCNdist',kpass,2); 
+        pivPar = copyvalue(pivPar,pivParIn,'crAmount',kpass,2); 
+        pivPar = copyvalue(pivPar,pivParIn,'vlMinCC',kpass,2);
         pivPar = copyvalue(pivPar,pivParIn,'vlTresh',kpass,2);
         pivPar = copyvalue(pivPar,pivParIn,'vlEps',kpass,2);
         pivPar = copyvalue(pivPar,pivParIn,'vlDist',kpass,2);
@@ -573,7 +662,19 @@ switch lower(action)
             pivData.pivPar{kpass} = copyvalue(pivData.pivPar{kpass},pivPar,'vlDistSeq',kpass,1);
             pivData.pivPar{kpass} = copyvalue(pivData.pivPar{kpass},pivPar,'vlPassesSeq',kpass,1);
         end
+
+        
+    case 'defaultsjobmanagement'   % SET DEFAULTS WHEN DEFINING JOBS
+        % add additional defaults
+        pivPar = pivParIn;
+        pivPar = chkfield(pivPar,'jmParallelJobs',4);
+        pivPar = chkfield(pivPar,'jmLockExpirationTime',600);
+        pivPar = orderfields(pivPar);
+
+
 end
+
+pivPar = orderfields(pivPar);  % ordder fields alphabetically
 end
 
 
