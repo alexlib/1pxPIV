@@ -109,5 +109,15 @@ catch e
     disp(['Error in Example 8b: ' e.message]);
 end
 close all;
+pause(1);
+
+disp('Running example_09_BOS_image_pair...');
+try
+    example_09_BOS_image_pair;
+    disp('Example 9 (BOS image pair) completed successfully');
+catch e
+    disp(['Error in Example 9 (BOS image pair): ' e.message]);
+end
+close all;
 
 disp('All examples completed!');

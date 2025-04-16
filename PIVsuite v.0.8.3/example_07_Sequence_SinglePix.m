@@ -7,14 +7,14 @@ tAll = tic;
 %% Set processing parameters
 
 % this variable defines, from where images should be read
-imagePath = ['..',filesep,'Data Tububu',filesep,'PlaneA05'];
+imagePath = ['..',filesep,'Data',filesep,'Test Tububu'];
 
-% define pathe, where processing results will be stored
-pivPar.spTargetPath = ['..' filesep 'Data Tububu' filesep 'PlaneA05 - spOut'];
+% define path, where processing results will be stored
+pivPar.spTargetPath = ['..' filesep 'Data' filesep 'Test Tububu - spOut'];
 
-% Define image mask
-pivPar.imMask1 = '../Data Tububu/PlaneA05/Mask.bmp';
-pivPar.imMask2 = '../Data Tububu/PlaneA05/Mask.bmp';
+% Define image mask (commented out as we don't have mask files)
+% pivPar.imMask1 = '../Data/Test Tububu/Mask.bmp';
+% pivPar.imMask2 = '../Data/Test Tububu/Mask.bmp';
 
 % define the maximum displacements, for which the cross-correlation is evaluated
 pivPar.spDeltaXNeg = 4;
@@ -36,7 +36,8 @@ pivPar = pivParams([],pivPar,'defaults1Px');
 %% Analyze images
 
 % get list of images
-aux = dir([imagePath, filesep, 'Img0*.bmp']);
+aux = dir([imagePath, filesep, '*.bmp']);
+fileList = {};
 for kk = 1:numel(aux)
     fileList{kk} = [imagePath, filesep, aux(kk).name];  %#ok<SAGROW>
 end
@@ -49,7 +50,7 @@ pivData1Px = pivSinglepixAnalyze(im1,im2,pivData1Px,pivPar);
 
 
 %% Show results
-% 
+%
 % pivQuiver(pivData1Px,...
 %     'UmagMean','clipLo',0,'clipHi',3,...
 %     'quiverMean','linespec','-k');
@@ -64,20 +65,20 @@ pivData1Px = pivSinglepixAnalyze(im1,im2,pivData1Px,pivPar);
 % Ycc = ((1:sizeY*(pivPar.spDeltaYNeg+pivPar.spDeltaYPos+2))-pivPar.spDeltaYNeg-1)*pivPar.spBindY/(pivPar.spDeltaYNeg+pivPar.spDeltaYPos+2);
 % Xac = ((1:sizeX*(2*pivPar.spDeltaAutoCorr+2))-pivPar.spDeltaAutoCorr-1)*pivPar.spBindX/(2*pivPar.spDeltaAutoCorr+2);
 % Yac = ((1:sizeY*(2*pivPar.spDeltaAutoCorr+2))-pivPar.spDeltaAutoCorr-1)*pivPar.spBindY/(2*pivPar.spDeltaAutoCorr+2);
-% 
+%
 % fprintf('Flattenning cross-correlation structure for display... \n    Treating row');
 % tic;
-% for ky=1:sizeY; 
+% for ky=1:sizeY;
 %     for kx=1:sizeX
 %         ccExpanded(...
 %               (ky-1)*(pivPar.spDeltaYNeg+pivPar.spDeltaYPos+2)+1:ky*(pivPar.spDeltaYNeg+pivPar.spDeltaYPos+2)-1,...
 %               (kx-1)*(pivPar.spDeltaXNeg+pivPar.spDeltaXPos+2)+1:kx*(pivPar.spDeltaXNeg+pivPar.spDeltaXPos+2)-1)...
-%             = squeeze(pivData1Px.ccFunc(ky,kx,:,:)); 
+%             = squeeze(pivData1Px.ccFunc(ky,kx,:,:));
 %         acExpanded(...
 %               (ky-1)*(2*pivPar.spDeltaAutoCorr+2)+1:ky*(2*pivPar.spDeltaAutoCorr+2)-1,...
 %               (kx-1)*(2*pivPar.spDeltaAutoCorr+2)+1:kx*(2*pivPar.spDeltaAutoCorr+2)-1)...
-%             = squeeze(pivData1Px.acFunc(ky,kx,:,:)); 
-%     end; 
+%             = squeeze(pivData1Px.acFunc(ky,kx,:,:));
+%     end;
 %     if round(ky/10)==ky/10
 %         fprintf(' %d ',ky);
 %     end;
@@ -88,13 +89,13 @@ pivData1Px = pivSinglepixAnalyze(im1,im2,pivData1Px,pivPar);
 %     end;
 % end
 % fprintf('    Finished in %.2f min.\n',toc/60);
-% 
+%
 % figure(1);
 % ccExpanded(ccExpanded<-0.1)=-0.1;
 % imagesc(Xcc,Ycc,ccExpanded);
 % axis equal;
 % colorbar
-% 
+%
 % figure(2);
 % acExpanded(acExpanded<-0.1)=-0.1;
 % imagesc(Xac,Yac,acExpanded);
