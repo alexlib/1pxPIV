@@ -7,3 +7,5 @@ pivsuite_py/pivsuite/__pycache__/*.pyc
 pivsuite_py/pivsuite/core/__pycache__/*.pyc
 pivsuite_py/pivsuite/utils/__pycache__/*.pyc
 **/__pycache__/*.pyc
+Data/Test BOS/*.tif
+pivsuite_py/output/*.png
