@@ -115,6 +115,44 @@ python examples/example_piv_analysis.py  # Standard PIV analysis
 python examples/example_bos_image_pair.py  # BOS analysis
 ```
 
+### Jupyter Notebooks
+
+The package also includes Jupyter notebook versions of the examples in the `notebooks` directory. These notebooks provide an interactive way to learn and experiment with the PIVSuite Python package.
+
+To run the notebooks, you need to have Jupyter installed:
+
+```bash
+pip install jupyter
+```
+
+Then you can start the Jupyter notebook server using the provided script:
+
+```bash
+python run_notebooks.py
+```
+
+Or manually:
+
+```bash
+cd notebooks
+jupyter notebook
+```
+
+The notebooks include:
+
+1. **example_01_image_pair_simple.ipynb** - Simple PIV analysis of an image pair
+2. **example_02_image_pair_standard.ipynb** - Standard PIV analysis with custom parameters
+3. **example_03_image_pair_advanced.ipynb** - Advanced PIV analysis with validation and smoothing
+4. **example_04_piv_challenge_a4.ipynb** - Analysis of PIV Challenge A4 test case
+5. **example_05_sequence_simple.ipynb** - Simple analysis of an image sequence
+6. **example_06_sequence_fast_and_on_drive.ipynb** - Sequence analysis with saving results to disk
+7. **example_07_piv_challenge_a3.ipynb** - Analysis of PIV Challenge A3 with multiple passes
+8. **example_08a_piv_challenge_a1.ipynb** - Analysis of PIV Challenge A1
+9. **example_08b_piv_challenge_a2.ipynb** - Analysis of PIV Challenge A2
+10. **example_bos_cropped.ipynb** - Analysis of cropped BOS images
+11. **example_bos_image_pair.ipynb** - Analysis of BOS image pairs
+12. **example_piv_analysis.ipynb** - General PIV analysis
+
 ## Testing
 
 To run the tests:

@@ -14,13 +14,6 @@ from .core import (
     piv_params
 )
 
-# Import BOS modules
-from .bos import (
-    analyze_bos_image_pair,
-    plot_bos_results,
-    plot_bos_quiver_only
-)
-
 # Import visualization modules
 from .visualization import (
     quiver_plot,
@@ -34,11 +27,6 @@ __all__ = [
     "analyze_image_pair",
     "analyze_image_sequence",
     "piv_params",
-
-    # BOS modules
-    "analyze_bos_image_pair",
-    "plot_bos_results",
-    "plot_bos_quiver_only",
 
     # Visualization modules
     "quiver_plot",

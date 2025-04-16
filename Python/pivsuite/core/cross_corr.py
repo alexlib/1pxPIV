@@ -13,14 +13,14 @@ from ..utils.math import std_fast, create_window_function
 
 
 def cross_correlate(
-    ex_im1: np.ndarray, 
-    ex_im2: np.ndarray, 
-    piv_data: Dict[str, Any], 
+    ex_im1: np.ndarray,
+    ex_im2: np.ndarray,
+    piv_data: Dict[str, Any],
     piv_params: Dict[str, Any]
 ) -> Union[Dict[str, Any], Tuple[Dict[str, Any], np.ndarray]]:
     """
     Compute cross-correlation between interrogation areas.
-    
+
     Parameters
     ----------
     ex_im1 : np.ndarray
@@ -31,7 +31,7 @@ def cross_correlate(
         Dictionary containing PIV results
     piv_params : Dict[str, Any]
         Dictionary containing PIV parameters
-        
+
     Returns
     -------
     Union[Dict[str, Any], Tuple[Dict[str, Any], np.ndarray]]
@@ -47,35 +47,35 @@ def cross_correlate(
     cc_max_displacement = piv_params.get('cc_max_displacement', 0.7)
     cc_subpixel_method = piv_params.get('cc_subpixel_method', 'gaussian')
     cc_correct_window_bias = piv_params.get('cc_correct_window_bias', True)
-    
+
     # Get dimensions
     ia_n_y, ia_n_x = piv_data['status'].shape
-    
+
     # Get status array
     status = piv_data['status'].copy()
-    
+
     # Get initial shift of interrogation areas
     ia_u0 = piv_data.get('ia_u0', np.zeros((ia_n_y, ia_n_x)))
     ia_v0 = piv_data.get('ia_v0', np.zeros((ia_n_y, ia_n_x)))
-    
+
     # Create window function W and loss-of-correlation function F
     W, F = create_window_function(ia_size_x, ia_size_y, cc_window)
-    
+
     # Limit F to not be too small
     if F is not None:
         F[F < 0.5] = 0.5
-    
+
     # Peak position is shifted by 1 or 0.5 px, depending on IA size
     if ia_size_x % 2 == 0:
         cc_px_shift_x = 1
     else:
         cc_px_shift_x = 0.5
-    
+
     if ia_size_y % 2 == 0:
         cc_px_shift_y = 1
     else:
         cc_px_shift_y = 0.5
-    
+
     # Initialize arrays for results
     u = np.zeros((ia_n_y, ia_n_x))
     v = np.zeros((ia_n_y, ia_n_x))
@@ -85,18 +85,18 @@ def cross_correlate(
     cc_std2 = np.full((ia_n_y, ia_n_x), np.nan)
     cc_mean1 = np.full((ia_n_y, ia_n_x), np.nan)
     cc_mean2 = np.full((ia_n_y, ia_n_x), np.nan)
-    
+
     # Initialize counters for failed cross-correlations
     cc_failed_n = 0
     cc_subpx_failed_n = 0
-    
+
     # Initialize array for cross-correlation peak image (if requested)
     return_cc_peak_im = piv_params.get('return_cc_peak_im', False)
     if return_cc_peak_im:
         cc_peak_im = np.full_like(ex_im1, np.nan)
     else:
         cc_peak_im = None
-    
+
     # Loop over interrogation areas
     for kx in range(ia_n_x):
         for ky in range(ia_n_y):
@@ -115,82 +115,92 @@ def cross_correlate(
                 # Get interrogation areas
                 im_ia1 = ex_im1[ky*ia_size_y:(ky+1)*ia_size_y, kx*ia_size_x:(kx+1)*ia_size_x]
                 im_ia2 = ex_im2[ky*ia_size_y:(ky+1)*ia_size_y, kx*ia_size_x:(kx+1)*ia_size_x]
-                
+
                 # Remove IA mean
                 aux_mean1 = np.mean(im_ia1)
                 aux_mean2 = np.mean(im_ia2)
                 im_ia1 = im_ia1 - cc_remove_ia_mean * aux_mean1
                 im_ia2 = im_ia2 - cc_remove_ia_mean * aux_mean2
-                
+
                 # Apply windowing function
                 im_ia1 = im_ia1 * W
                 im_ia2 = im_ia2 * W
-                
+
                 # Compute rms for normalization of cross-correlation
                 aux_std1 = std_fast(im_ia1)
                 aux_std2 = std_fast(im_ia2)
-                
+
                 # Compute cross-correlation
                 if cc_method.lower() == 'fft':
                     cc = fft_cross_correlate(im_ia1, im_ia2, aux_std1, aux_std2)
-                    
+
                     # Find the cross-correlation peak
                     aux_peak = np.max(cc)
                     u_px = np.argmax(np.max(cc, axis=0))
                     v_px = np.argmax(cc[:, u_px])
-                    
+
                 elif cc_method.lower() == 'dcn':
                     max_disp = min(int(cc_max_displacement * ia_size_x), int(cc_max_displacement * ia_size_y))
                     cc = dcn_cross_correlate(im_ia1, im_ia2, max_disp, aux_std1, aux_std2)
-                    
+
                     # Find the cross-correlation peak
                     aux_peak = np.max(cc)
                     u_px = np.argmax(np.max(cc, axis=0))
                     v_px = np.argmax(cc[:, u_px])
-                    
+
                     # If peak is not at the center, use FFT method
                     if (u_px != ia_size_x//2 + cc_px_shift_x) or (v_px != ia_size_y//2 + cc_px_shift_y):
                         cc = fft_cross_correlate(im_ia1, im_ia2, aux_std1, aux_std2)
                         aux_peak = np.max(cc)
                         u_px = np.argmax(np.max(cc, axis=0))
                         v_px = np.argmax(cc[:, u_px])
-                
+
                 # Check if the displacement is too large
                 if (abs(u_px - ia_size_x//2 - cc_px_shift_x) > cc_max_displacement * ia_size_x) or \
                    (abs(v_px - ia_size_y//2 - cc_px_shift_y) > cc_max_displacement * ia_size_y):
                     fail_flag |= 2  # Set bit 1 (cross-correlation failed)
                     cc_failed_n += 1
-                
+
                 # Correct cc peak for bias caused by interrogation window
                 if cc_correct_window_bias and F is not None:
                     cc_cor = cc / F
                 else:
                     cc_cor = cc
-                
+
                 # Sub-pixel interpolation (2x3point Gaussian fit)
                 try:
                     # Check if peak is at the border
-                    if (u_px <= 0 or u_px >= cc.shape[1]-1 or 
+                    if (u_px <= 0 or u_px >= cc.shape[1]-1 or
                         v_px <= 0 or v_px >= cc.shape[0]-1):
                         raise ValueError("Peak at border")
-                    
+
                     # Compute sub-pixel displacement
-                    du = (np.log(cc_cor[v_px, u_px-1]) - np.log(cc_cor[v_px, u_px+1])) / \
-                         (np.log(cc_cor[v_px, u_px-1]) + np.log(cc_cor[v_px, u_px+1]) - 2*np.log(cc_cor[v_px, u_px])) / 2
-                    
-                    dv = (np.log(cc_cor[v_px-1, u_px]) - np.log(cc_cor[v_px+1, u_px])) / \
-                         (np.log(cc_cor[v_px-1, u_px]) + np.log(cc_cor[v_px+1, u_px]) - 2*np.log(cc_cor[v_px, u_px])) / 2
-                    
+                    # Make sure correlation values are positive
+                    cc_u_m1 = max(cc_cor[v_px, u_px-1], 1e-10)
+                    cc_u_p1 = max(cc_cor[v_px, u_px+1], 1e-10)
+                    cc_u_0 = max(cc_cor[v_px, u_px], 1e-10)
+
+                    cc_v_m1 = max(cc_cor[v_px-1, u_px], 1e-10)
+                    cc_v_p1 = max(cc_cor[v_px+1, u_px], 1e-10)
+                    cc_v_0 = max(cc_cor[v_px, u_px], 1e-10)
+
+                    # Compute sub-pixel displacement using Gaussian fit
+                    du = (np.log(cc_u_m1) - np.log(cc_u_p1)) / \
+                         (np.log(cc_u_m1) + np.log(cc_u_p1) - 2*np.log(cc_u_0)) / 2
+
+                    dv = (np.log(cc_v_m1) - np.log(cc_v_p1)) / \
+                         (np.log(cc_v_m1) + np.log(cc_v_p1) - 2*np.log(cc_v_0)) / 2
+
                     # Check if the result is valid
                     if np.isnan(du) or np.isnan(dv) or np.isinf(du) or np.isinf(dv):
                         raise ValueError("Invalid sub-pixel displacement")
-                    
+
                 except Exception:
                     fail_flag |= 4  # Set bit 2 (peak detection failed)
                     cc_subpx_failed_n += 1
                     du = 0
                     dv = 0
-            
+
             # Save the results
             if fail_flag == 0:
                 u[ky, kx] = ia_u0[ky, kx] + u_px + du - ia_size_x//2 - cc_px_shift_x
@@ -198,18 +208,18 @@ def cross_correlate(
             else:
                 u[ky, kx] = np.nan
                 v[ky, kx] = np.nan
-            
+
             status[ky, kx] = fail_flag
-            
+
             if return_cc_peak_im:
                 cc_peak_im[ky*ia_size_y:(ky+1)*ia_size_y, kx*ia_size_x:(kx+1)*ia_size_x] = cc
-            
+
             cc_peak[ky, kx] = aux_peak
             cc_std1[ky, kx] = aux_std1
             cc_std2[ky, kx] = aux_std2
             cc_mean1[ky, kx] = aux_mean1
             cc_mean2[ky, kx] = aux_mean2
-            
+
             # Find secondary peak
             try:
                 cc_copy = cc.copy()
@@ -220,7 +230,7 @@ def cross_correlate(
                 x_min = max(0, u_px - mask_size // 2)
                 x_max = min(cc.shape[1], u_px + mask_size // 2 + 1)
                 cc_copy[y_min:y_max, x_min:x_max] = 0
-                
+
                 cc_peak_secondary[ky, kx] = np.max(cc_copy)
             except Exception:
                 try:
@@ -232,15 +242,19 @@ def cross_correlate(
                     x_min = max(0, u_px - mask_size // 2)
                     x_max = min(cc.shape[1], u_px + mask_size // 2 + 1)
                     cc_copy[y_min:y_max, x_min:x_max] = 0
-                    
+
                     cc_peak_secondary[ky, kx] = np.max(cc_copy)
                 except Exception:
                     cc_peak_secondary[ky, kx] = np.nan
-    
+
     # Get IAs where CC failed, and coordinates of corresponding IAs
     cc_failed_i = np.bitwise_and(status, 2).astype(bool)
     cc_subpx_failed_i = np.bitwise_and(status, 4).astype(bool)
-    
+
+    print(f"Cross-correlation failed for {cc_failed_n} vectors")
+    print(f"Sub-pixel interpolation failed for {cc_subpx_failed_n} vectors")
+    print(f"Total vectors with CC issues: {np.sum(cc_failed_i | cc_subpx_failed_i)}")
+
     # Store results in piv_data
     piv_data['status'] = status
     piv_data['u'] = u
@@ -254,13 +268,13 @@ def cross_correlate(
     piv_data['cc_failed_n'] = cc_failed_n
     piv_data['cc_subpx_failed_n'] = cc_subpx_failed_n
     piv_data['cc_w'] = W
-    
+
     # Remove fields that are no longer needed
     if 'ia_u0' in piv_data:
         del piv_data['ia_u0']
     if 'ia_v0' in piv_data:
         del piv_data['ia_v0']
-    
+
     if return_cc_peak_im:
         return piv_data, cc_peak_im
     else:
@@ -270,7 +284,7 @@ def cross_correlate(
 def fft_cross_correlate(im1: np.ndarray, im2: np.ndarray, std1: float, std2: float) -> np.ndarray:
     """
     Compute cross-correlation using FFT.
-    
+
     Parameters
     ----------
     im1 : np.ndarray
@@ -281,7 +295,7 @@ def fft_cross_correlate(im1: np.ndarray, im2: np.ndarray, std1: float, std2: flo
         Standard deviation of first image
     std2 : float
         Standard deviation of second image
-        
+
     Returns
     -------
     np.ndarray
@@ -291,17 +305,17 @@ def fft_cross_correlate(im1: np.ndarray, im2: np.ndarray, std1: float, std2: flo
     cc = np.fft.fftshift(np.real(np.fft.ifft2(
         np.conj(np.fft.fft2(im1)) * np.fft.fft2(im2)
     )))
-    
+
     # Normalize
     cc = cc / (std1 * std2) / (im1.size)
-    
+
     return cc
 
 
 def dcn_cross_correlate(im1: np.ndarray, im2: np.ndarray, max_disp: int, std1: float, std2: float) -> np.ndarray:
     """
     Compute cross-correlation using direct convolution.
-    
+
     Parameters
     ----------
     im1 : np.ndarray
@@ -314,7 +328,7 @@ def dcn_cross_correlate(im1: np.ndarray, im2: np.ndarray, max_disp: int, std1: f
         Standard deviation of first image
     std2 : float
         Standard deviation of second image
-        
+
     Returns
     -------
     np.ndarray
@@ -323,7 +337,7 @@ def dcn_cross_correlate(im1: np.ndarray, im2: np.ndarray, max_disp: int, std1: f
     nx = im1.shape[1]
     ny = im1.shape[0]
     cc = np.zeros((ny, nx))
-    
+
     # Create variables defining where is cc(0,0)
     dx0 = nx // 2
     dy0 = ny // 2
@@ -331,33 +345,33 @@ def dcn_cross_correlate(im1: np.ndarray, im2: np.ndarray, max_disp: int, std1: f
         dx0 += 1
     else:
         dx0 += 0.5
-    
+
     if ny % 2 == 0:
         dy0 += 1
     else:
         dy0 += 0.5
-    
+
     dx0 = int(dx0)
     dy0 = int(dy0)
-    
+
     # Pad IAs
     im1_pad = np.zeros((ny + 2*max_disp, nx + 2*max_disp))
     im2_pad = np.zeros((ny + 2*max_disp, nx + 2*max_disp))
     im1_pad[max_disp:max_disp+ny, max_disp:max_disp+nx] = im1
     im2_pad[max_disp:max_disp+ny, max_disp:max_disp+nx] = im2
-    
+
     # Convolve
     for kx in range(-max_disp, max_disp+1):
         for ky in range(-max_disp, max_disp+1):
             if abs(kx) + abs(ky) > max_disp:
                 continue
-            
+
             cc[dy0+ky, dx0+kx] = np.sum(
-                im2_pad[ky+max_disp:ky+max_disp+ny, kx+max_disp:kx+max_disp+nx] * 
+                im2_pad[ky+max_disp:ky+max_disp+ny, kx+max_disp:kx+max_disp+nx] *
                 im1_pad[max_disp:max_disp+ny, max_disp:max_disp+nx]
             )
-    
+
     # Normalize
     cc = cc / (std1 * std2) / (im1.size)
-    
+
     return cc
