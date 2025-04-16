@@ -20,7 +20,9 @@ if ~exist(im1Path, 'file') || ~exist(im2Path, 'file')
 end
 
 % Set PIV parameters
-pivPar = pivParams(); % Initialize with default parameters
+pivPar = []; % Initialize empty parameter structure
+% Set parameters to defaults
+pivPar = pivParams([], pivPar, 'defaults');
 
 % Modify default parameters
 pivPar.iaSizeX = 8;     % Interrogation area size in X
@@ -62,27 +64,40 @@ fprintf('Images loaded. Size: %d x %d pixels\n', size(im1, 2), size(im1, 1));
 
 %% Perform PIV analysis
 fprintf('Performing PIV analysis...\n');
-pivData = pivAnalyzeImagePair(im1, im2, pivPar);
+% Create empty pivData structure
+pivData = [];
+% Perform PIV analysis
+pivData = pivAnalyzeImagePair(im1, im2, pivData, pivPar);
 
 %% Display results
 % Plot the velocity field
 figure(1);
-pivQuiver(pivData);
+% Create quiver plot manually
+quiver(pivData.x, pivData.y, pivData.u, pivData.v, 'r');
 title('BOS Image Pair - Velocity Field');
+axis equal;
 
 % Plot the velocity magnitude
 figure(2);
-pivPlot(pivData);
+% Calculate velocity magnitude
+velocity_magnitude = sqrt(pivData.u.^2 + pivData.v.^2);
+% Plot velocity magnitude
+imagesc(pivData.x(1,:), pivData.y(:,1), velocity_magnitude);
+colorbar;
 title('BOS Image Pair - Velocity Magnitude');
 
 % Plot the velocity components
 figure(3);
 subplot(1,2,1);
-pivPlot(pivData, 'type', 'u');
+% Plot u component
+imagesc(pivData.x(1,:), pivData.y(:,1), pivData.u);
+colorbar;
 title('BOS Image Pair - X Velocity Component');
 
 subplot(1,2,2);
-pivPlot(pivData, 'type', 'v');
+% Plot v component
+imagesc(pivData.x(1,:), pivData.y(:,1), pivData.v);
+colorbar;
 title('BOS Image Pair - Y Velocity Component');
 
 % Save the results to a .mat file for later analysis
