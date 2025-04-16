@@ -4,3 +4,6 @@ Data/Test Tububu - spOut/*
 Data/Test PIVChallenge3A3 /A3000_a.tif
 PIVsuite v.0.8.3/example_09_BOS_image_pair.m
 pivsuite_py/pivsuite/__pycache__/*.pyc
+pivsuite_py/pivsuite/core/__pycache__/*.pyc
+pivsuite_py/pivsuite/utils/__pycache__/*.pyc
+**/__pycache__/*.pyc

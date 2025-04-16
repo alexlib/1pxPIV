@@ -35,6 +35,51 @@ pip install -e .
 
 ## Usage
 
+### Standard PIV Analysis Example
+
+```python
+from pivsuite.core import analyze_image_pair, piv_params
+from pivsuite.visualization import quiver_plot, vector_plot
+
+# Set PIV parameters
+piv_par = {}
+piv_par = piv_params(None, piv_par, 'defaults')
+
+# Customize parameters
+piv_par['ia_size_x'] = [32, 16]  # Interrogation area size in x
+piv_par['ia_size_y'] = [32, 16]  # Interrogation area size in y
+piv_par['ia_step_x'] = [16, 8]   # Interrogation area step in x
+piv_par['ia_step_y'] = [16, 8]   # Interrogation area step in y
+piv_par['ia_method'] = 'defspline'  # Interrogation method ('basic', 'offset', 'defspline')
+
+# Analyze image pair
+piv_data, _ = analyze_image_pair(
+    im1_path="path/to/first/image.tif",
+    im2_path="path/to/second/image.tif",
+    None,
+    piv_par
+)
+
+# Create quiver plot
+quiver_plot(
+    piv_data,
+    scale=1.0,
+    skip=2,
+    color='r',
+    title='PIV Velocity Field',
+    output_path="piv_quiver_plot.png"
+)
+
+# Create vector plot of velocity magnitude
+vector_plot(
+    piv_data,
+    component='magnitude',
+    cmap='jet',
+    title='PIV Velocity Magnitude',
+    output_path="piv_velocity_magnitude.png"
+)
+```
+
 ### BOS Analysis Example
 
 ```python
@@ -66,7 +111,8 @@ The package includes several example scripts in the `examples` directory:
 
 ```bash
 cd pivsuite_py
-python examples/example_bos_image_pair.py
+python examples/example_piv_analysis.py  # Standard PIV analysis
+python examples/example_bos_image_pair.py  # BOS analysis
 ```
 
 ## Testing
