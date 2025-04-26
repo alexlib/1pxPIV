@@ -161,11 +161,11 @@ switch lower(method)
             % interpolate for all X and Y
             switch lower(method)
                 case 'linear'
-                    flatUi =  TriScatteredInterp(flatX,flatY,flatU,'linear');
-                    flatVi =  TriScatteredInterp(flatX,flatY,flatV,'linear');
+                    flatUi =  scatteredInterpolant(flatX,flatY,flatU,'linear');
+                    flatVi =  scatteredInterpolant(flatX,flatY,flatV,'linear');
                 case 'natural'
-                    flatUi =  TriScatteredInterp(flatX,flatY,flatU,'natural');
-                    flatVi =  TriScatteredInterp(flatX,flatY,flatV,'natural');
+                    flatUi =  scatteredInterpolant(flatX,flatY,flatU,'natural');
+                    flatVi =  scatteredInterpolant(flatX,flatY,flatV,'natural');
             end
             filledU(:,:,kt) = flatUi(X,Y);
             filledV(:,:,kt) = flatVi(X,Y);
